@@ -59,6 +59,7 @@ export class Bot {
     const storedGameAddress = await this.state.storage.get("gameAddress");
     const storedPlayerId = await this.state.storage.get("playerId");
     const storedTeamA = await this.state.storage.get("teamA") as boolean | null;
+    const lastActionTime = await this.state.storage.get("lastActionTime") as number;
     let storedPlayers = await this.state.storage.get("players");
     if (typeof storedPlayers === 'string') {
       storedPlayers = JSON.parse(storedPlayers);
@@ -198,6 +199,9 @@ export class Bot {
                 });
                 currentEnergy = updatedStats[1];
                 console.log('Updated energy:', currentEnergy);
+                
+                // Update last action time
+                await this.state.storage.put("lastActionTime", Date.now());
               } else {
                 console.log('No enemy players found');
                 break;
@@ -207,6 +211,7 @@ export class Bot {
               break;
             }
           }
+
         } else {
           console.log("Not time to play yet");
         }
@@ -217,6 +222,13 @@ export class Bot {
             console.log("Game ended");
             return false;
         }
+      }
+
+      // If no action was taken in this execution, check the timeout
+      const TEN_MINUTES = 10 * 60 * 1000; // 10 minutes in milliseconds
+      if (Date.now() - lastActionTime > TEN_MINUTES) {
+        console.log("No action taken in 10 minutes, releasing resources");
+        return false;
       }
     }
     return true;
@@ -244,6 +256,7 @@ export class Bot {
       await this.state.storage.put("playerId", this.playerId);
       await this.state.storage.put("teamA", this.teamA);
       await this.state.storage.put("lastRun", Date.now());
+      await this.state.storage.put("lastActionTime", Date.now());
 
       // Execute bot logic and set the alarm
       await this.executeBotLogic();
@@ -258,6 +271,10 @@ export class Bot {
     if (await this.executeBotLogic()) {
         // Set the next alarm for 5 seconds from now
         await this.state.storage.setAlarm(Date.now() + 5000);
+    } else {
+        // Game is over or we don't need to continue, clean up resources
+        await this.state.storage.deleteAll();
+        console.log("Bot resources released - game ended or no longer needed");
     }
   }
 } 
