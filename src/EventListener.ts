@@ -2,7 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import { Env } from "./Env";
 import { ReadyAimFireABI } from "./abis/ReadyAimFireABI";
 import { MinterABI } from "./abis/MinterABI";
-import { encodeEventTopics, createPublicClient, createWalletClient, http, parseEther, encodeFunctionData, type Hash } from "viem";
+import { encodeEventTopics, createPublicClient, createWalletClient, http, parseEther, encodeFunctionData, type Hash, decodeEventLog } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
 import { forwardTransaction } from "./forwarder/forwardTransaction";
@@ -193,27 +193,56 @@ export class EventListener {
         });
 
         const subscribePayload = {
+          jsonrpc: '2.0',
           id: 1,
           method: "eth_subscribe",
           params: [
             "logs",
             {
-              topics
+              topics: topics
             }
           ]
         };
-  
+
+        console.log("Subscribing with payload:", JSON.stringify(subscribePayload));
         ws.send(JSON.stringify(subscribePayload));
       };
   
-      ws.onmessage = (event: MessageEvent) => {
+      ws.onmessage = async(event: MessageEvent) => {
         try {
           const data = JSON.parse(event.data as string);
-  
+          console.log("ONMESSAGE !!!!!!!!!!!! ", data);
           if (data.method === "eth_subscription") {
             const log = data.params.result;
             console.log("📦 Event received", log);
-            // Decode and process the log if desired
+          
+            // Get the PlayerJoinedEvent from the ABI
+            const playerJoinedEvent = ReadyAimFireABI.find(
+              (item) => item.type === "event" && item.name === "PlayerJoinedEvent"
+            );
+
+            if (!playerJoinedEvent) {
+              throw new Error("PlayerJoinedEvent not found in ABI");
+            }
+
+            // Decode the log data using the ABI
+            const decodedLog = decodeEventLog({
+              abi: [playerJoinedEvent],
+              data: log.data,
+              topics: log.topics,
+              strict: false
+            });
+
+            console.log("Decoded log:", decodedLog);
+
+            if (!decodedLog.args.playerId) {
+              throw new Error("PlayerId not found in decoded log");
+            }
+
+            const isTeamA = decodedLog.args.locationX === 0n;
+            const id = this.env.BOT.idFromName(decodedLog.args.playerId.toString());
+            const bot = this.env.BOT.get(id);
+            await bot.fetch(new Request(`http://bot/start?gameAddress=${log.address}&playerId=${decodedLog.args.playerId}&teamA=${isTeamA}`));
           }
         } catch (err) {
           console.error("⚠️ Failed to parse log message", err);
@@ -242,9 +271,9 @@ export class EventListener {
         try {
           await this.checkMint(this.env.ADDRESS);
           console.log("Mint check completed");
-          await this.checkHistoryAndStart();
-          // await this.connect();
-          // return new Response("WebSocket connection started and mint check completed.");
+          // await this.checkHistoryAndStart();
+          await this.connect();
+          return new Response("WebSocket connection started and mint check completed.");
         } catch (error: unknown) {
           console.error("Error in /start:", error);
           const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";

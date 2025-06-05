@@ -9,4 +9,6 @@ export interface Env {
 	GAME_CONTRACT_ADDRESS: string;
 	EVENT_LISTENER: DurableObjectNamespace;
 	BOT: DurableObjectNamespace;
+	BASIC_DECK_ADDRESS: string;
+	READY_AIM_FIRE_ADDRESS: string;
 }
