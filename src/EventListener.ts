@@ -271,7 +271,7 @@ export class EventListener {
         try {
           await this.checkMint(this.env.ADDRESS);
           console.log("Mint check completed");
-          // await this.checkHistoryAndStart();
+          await this.checkHistoryAndStart();
           await this.connect();
           return new Response("WebSocket connection started and mint check completed.");
         } catch (error: unknown) {
