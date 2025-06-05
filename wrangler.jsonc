@@ -10,7 +10,8 @@
 	"migrations": [
 		{
 			"new_sqlite_classes": [
-				"EventListener"
+				"EventListener",
+				"Bot"
 			],
 			"tag": "v1"
 		}
