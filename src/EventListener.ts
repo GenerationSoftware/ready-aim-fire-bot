@@ -122,25 +122,45 @@ export class EventListener {
         // No need to filter logs since we're already filtering by owner in the query
         const ourLogs = logs;
 
-        // Check game state for each game
-        for (const log of ourLogs) {
-          const gameState = await publicClient.readContract({
-            address: log.address,
+        // Process logs in batches of 100
+        const BATCH_SIZE = 100;
+        for (let i = 0; i < ourLogs.length; i += BATCH_SIZE) {
+          const batch = ourLogs.slice(i, i + BATCH_SIZE);
+          
+          // Create multicall contracts for this batch
+          const contracts = batch.map(log => ({
+            address: log.address as `0x${string}`,
             abi: ReadyAimFireABI,
-            functionName: 'getGameState'
+            functionName: 'getGameState' as const
+          }));
+
+          // Execute multicall
+          const gameStates = await publicClient.multicall({
+            contracts
           });
 
-          if (gameState <= 2) {
-            console.log("READY TO PLAY");
-            // Create a new Bot instance using playerId
-            const args = log.args as { owner: `0x${string}`, playerId: bigint, locationX: bigint };
-            const isTeamA = args.locationX === 0n;
-            const id = this.env.BOT.idFromName(args.playerId.toString());
-            const bot = this.env.BOT.get(id);
-            await bot.fetch(new Request(`http://bot/start?gameAddress=${log.address}&playerId=${args.playerId}&teamA=${isTeamA}`));
-            break;
-          } else {
-            console.log("NOT READY TO PLAY", log.address, gameState);
+          // Process results
+          for (let j = 0; j < batch.length; j++) {
+            const log = batch[j];
+            const response = gameStates[j];
+            if (!response.status) {
+              console.error("Failed to get game state for", log.address);
+              continue;
+            }
+            const gameState = response.result as number;
+
+            if (gameState <= 2) {
+              console.log("READY TO PLAY");
+              // Create a new Bot instance using playerId
+              const args = log.args as { owner: `0x${string}`, playerId: bigint, locationX: bigint };
+              const isTeamA = args.locationX === 0n;
+              const id = this.env.BOT.idFromName(args.playerId.toString());
+              const bot = this.env.BOT.get(id);
+              bot.fetch(new Request(`http://bot/start?gameAddress=${log.address}&playerId=${args.playerId}&teamA=${isTeamA}`));
+              break;
+            } else {
+              console.log("NOT READY TO PLAY", log.address, gameState);
+            }
           }
         }
         return currentBlock;
