@@ -60,18 +60,15 @@ export class Bot {
     const storedPlayerId = await this.state.storage.get("playerId");
     const storedTeamA = await this.state.storage.get("teamA") as boolean | null;
     const lastActionTime = await this.state.storage.get("lastActionTime") as number;
-    let storedPlayers = await this.state.storage.get("players");
-    if (typeof storedPlayers === 'string') {
-      storedPlayers = JSON.parse(storedPlayers);
-    }
+    const players = await this.getGamePlayers(storedGameAddress as string);
 
     if (typeof storedGameAddress === 'string' && typeof storedPlayerId === 'string') {
       this.gameAddress = storedGameAddress;
       this.playerId = storedPlayerId;
       this.teamA = storedTeamA;
       console.log(`Game Address: ${this.gameAddress}, Player ID: ${this.playerId}, Team A: ${this.teamA}`);
-      if (storedPlayers) {
-        console.log('Players:', storedPlayers);
+      if (players) {
+        console.log('Players:', players);
       }
 
       // Create public client for game state checks
@@ -147,7 +144,7 @@ export class Bot {
               console.log('Playing card index:', cardIndex);
 
               // Get enemy players
-              const enemyPlayers = (storedPlayers as Player[]).filter(p => p.teamA !== this.teamA);
+              const enemyPlayers = (players as Player[]).filter(p => p.teamA !== this.teamA);
               if (enemyPlayers.length > 0) {
                 // Select a random enemy
                 const randomEnemy = enemyPlayers[Math.floor(Math.random() * enemyPlayers.length)];
@@ -246,10 +243,6 @@ export class Bot {
       if (!this.gameAddress || !this.playerId || this.teamA === null) {
         return new Response("Missing gameAddress or playerId or teamA", { status: 400 });
       }
-
-      // Get and store all players
-      const players = await this.getGamePlayers(this.gameAddress);
-      await this.state.storage.put("players", JSON.stringify(players));
 
       // Store in durable storage
       await this.state.storage.put("gameAddress", this.gameAddress);
