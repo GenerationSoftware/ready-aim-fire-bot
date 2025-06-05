@@ -1,12 +1,10 @@
-import { DurableObject } from "cloudflare:workers";
 import { Env } from "./Env";
 import { ReadyAimFireABI } from "./abis/ReadyAimFireABI";
 import { MinterABI } from "./abis/MinterABI";
-import { encodeEventTopics, createPublicClient, createWalletClient, http, parseEther, encodeFunctionData, type Hash, decodeEventLog } from "viem";
+import { createPublicClient, createWalletClient, http, encodeFunctionData } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
 import { forwardTransaction } from "./forwarder/forwardTransaction";
-import { keccak256, toBytes } from "viem";
 
 // WebSocket interface to match Cloudflare Workers WebSocket API
 interface WebSocketEventHandlers {
@@ -94,7 +92,7 @@ export class EventListener {
       }
     }
 
-    private async checkHistoryAndStart() {
+    private async checkHistoryAndStart(fromBlock: bigint): Promise<bigint> {
       try {
         // Create a public client for reading contract state
         const publicClient = createPublicClient({
@@ -102,7 +100,7 @@ export class EventListener {
           transport: http(this.env.ETH_RPC_URL)
         });
 
-        // Get logs from the last 1000 blocks
+        // Get logs from the specified block
         const currentBlock = await publicClient.getBlockNumber();
 
         const playerJoinedEvent = ReadyAimFireABI.find(item => item.type === 'event' && item.name === 'PlayerJoinedEvent');
@@ -112,7 +110,7 @@ export class EventListener {
 
         const logs = await publicClient.getLogs({
           event: playerJoinedEvent,
-          fromBlock: 0n,
+          fromBlock: fromBlock,
           toBlock: currentBlock,
           args: {
             owner: this.env.ADDRESS as `0x${string}`
@@ -142,11 +140,13 @@ export class EventListener {
             await bot.fetch(new Request(`http://bot/start?gameAddress=${log.address}&playerId=${args.playerId}&teamA=${isTeamA}`));
             break;
           } else {
-            console.log("NOT READY TO PLAY", gameState);
+            console.log("NOT READY TO PLAY", log.address, gameState);
           }
         }
+        return currentBlock;
       } catch (error) {
         console.error("Error in checkHistoryAndStart:", error);
+        throw error;
       }
     }
   
@@ -159,7 +159,8 @@ export class EventListener {
         try {
           await this.checkMint(this.env.ADDRESS);
           console.log("Mint check completed");
-          await this.checkHistoryAndStart();
+          const currentBlock = await this.checkHistoryAndStart(0n);
+          await this.state.storage.put("latestBlock", currentBlock.toString());
           await this.state.storage.setAlarm(Date.now() + 5000);
           return new Response("Mint check completed and awaiting games.");
         } catch (error: unknown) {
@@ -176,7 +177,10 @@ export class EventListener {
 
     async alarm() {
       console.log("Alarm received");
-      await this.checkHistoryAndStart();
+      const latestBlock = await this.state.storage.get("latestBlock") as string | undefined;
+      const fromBlock = latestBlock ? BigInt(latestBlock) : 0n;
+      const currentBlock = await this.checkHistoryAndStart(fromBlock);
+      await this.state.storage.put("latestBlock", currentBlock.toString());
       await this.state.storage.setAlarm(Date.now() + 5000);
     }
   }
