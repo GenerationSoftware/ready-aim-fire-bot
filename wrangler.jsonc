@@ -10,7 +10,7 @@
 	"migrations": [
 		{
 			"new_sqlite_classes": [
-				"MyDurableObject"
+				"EventListener"
 			],
 			"tag": "v1"
 		}
@@ -18,8 +18,12 @@
 	"durable_objects": {
 		"bindings": [
 			{
-				"class_name": "MyDurableObject",
-				"name": "MY_DURABLE_OBJECT"
+				"class_name": "EventListener",
+				"name": "EVENT_LISTENER"
+			},
+			{
+				"class_name": "Bot",
+				"name": "BOT"
 			}
 		]
 	},
