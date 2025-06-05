@@ -150,118 +150,6 @@ export class EventListener {
       }
     }
   
-    async connect() {
-      if (this.websocket) return;
-  
-      console.log("Connecting to WebSocket", this.env.ETH_WS_RPC_URL);
-
-      const ws = new WebSocket(this.env.ETH_WS_RPC_URL) as WebSocket & WebSocketEventHandlers;
-  
-      ws.onopen = () => {
-        console.log("✅ WebSocket connected");
-  
-        /*
-
-        Process:
-
-        Listens for PlayerJoinedGame with its address.
-        Allocates a new durable object for the player id
-
-        Durable object:
-        - listens for GameStarted event
-        - polls every 2 seconds to see if its the bot turn
-        - if timeout, then kill the bot.
-
-        */
-
-        // Get the PlayerJoinedEvent from the ABI
-        const playerJoinedEvent = ReadyAimFireABI.find(
-          (item) => item.type === "event" && item.name === "PlayerJoinedEvent"
-        );
-
-        if (!playerJoinedEvent) {
-          throw new Error("PlayerJoinedEvent not found in ABI");
-        }
-
-        // Generate topics using Viem
-        const topics = encodeEventTopics({
-          abi: [playerJoinedEvent],
-          eventName: "PlayerJoinedEvent",
-          args: {
-            owner: this.env.ADDRESS as `0x${string}`
-          }
-        });
-
-        const subscribePayload = {
-          jsonrpc: '2.0',
-          id: 1,
-          method: "eth_subscribe",
-          params: [
-            "logs",
-            {
-              topics: topics
-            }
-          ]
-        };
-
-        console.log("Subscribing with payload:", JSON.stringify(subscribePayload));
-        ws.send(JSON.stringify(subscribePayload));
-      };
-  
-      ws.onmessage = async(event: MessageEvent) => {
-        try {
-          const data = JSON.parse(event.data as string);
-          console.log("ONMESSAGE !!!!!!!!!!!! ", data);
-          if (data.method === "eth_subscription") {
-            const log = data.params.result;
-            console.log("📦 Event received", log);
-          
-            // Get the PlayerJoinedEvent from the ABI
-            const playerJoinedEvent = ReadyAimFireABI.find(
-              (item) => item.type === "event" && item.name === "PlayerJoinedEvent"
-            );
-
-            if (!playerJoinedEvent) {
-              throw new Error("PlayerJoinedEvent not found in ABI");
-            }
-
-            // Decode the log data using the ABI
-            const decodedLog = decodeEventLog({
-              abi: [playerJoinedEvent],
-              data: log.data,
-              topics: log.topics,
-              strict: false
-            });
-
-            console.log("Decoded log:", decodedLog);
-
-            if (!decodedLog.args.playerId) {
-              throw new Error("PlayerId not found in decoded log");
-            }
-
-            const isTeamA = decodedLog.args.locationX === 0n;
-            const id = this.env.BOT.idFromName(decodedLog.args.playerId.toString());
-            const bot = this.env.BOT.get(id);
-            await bot.fetch(new Request(`http://bot/start?gameAddress=${log.address}&playerId=${decodedLog.args.playerId}&teamA=${isTeamA}`));
-          }
-        } catch (err) {
-          console.error("⚠️ Failed to parse log message", err);
-        }
-      };
-  
-      ws.onclose = () => {
-        console.log("🔁 WebSocket closed, retrying...");
-        this.websocket = null;
-        setTimeout(() => this.connect(), 5000);
-      };
-  
-      ws.onerror = (err: Event) => {
-        console.error("🛑 WebSocket error", err);
-      };
-  
-      this.websocket = ws;
-    }
-  
     async fetch(request: Request): Promise<Response> {
       const url = new URL(request.url);
       console.log("EventListener Fetching", url.pathname);
@@ -272,8 +160,8 @@ export class EventListener {
           await this.checkMint(this.env.ADDRESS);
           console.log("Mint check completed");
           await this.checkHistoryAndStart();
-          await this.connect();
-          return new Response("WebSocket connection started and mint check completed.");
+          await this.state.storage.setAlarm(Date.now() + 5000);
+          return new Response("Mint check completed and awaiting games.");
         } catch (error: unknown) {
           console.error("Error in /start:", error);
           const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
@@ -284,5 +172,11 @@ export class EventListener {
       }
   
       return new Response("Not found", { status: 404 });
+    }
+
+    async alarm() {
+      console.log("Alarm received");
+      await this.checkHistoryAndStart();
+      await this.state.storage.setAlarm(Date.now() + 5000);
     }
   }
