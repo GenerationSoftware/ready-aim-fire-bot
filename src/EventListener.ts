@@ -110,20 +110,19 @@ export class EventListener {
           throw new Error('PlayerJoinedEvent not found in ABI');
         }
 
-        console.log("Checking history and starting");
-
         const logs = await publicClient.getLogs({
           event: playerJoinedEvent,
-          toBlock: currentBlock
+          fromBlock: 0n,
+          toBlock: currentBlock,
+          args: {
+            owner: this.env.ADDRESS as `0x${string}`
+          }
         });
 
-        console.log("Logs", logs);
+        console.log(logs);
 
-        // Filter logs for our address
-        const ourLogs = logs.filter(log => {
-          const args = log.args as { owner: `0x${string}` };
-          return args.owner.toLowerCase() === this.env.ADDRESS.toLowerCase();
-        });
+        // No need to filter logs since we're already filtering by owner in the query
+        const ourLogs = logs;
 
         // Check game state for each game
         for (const log of ourLogs) {
@@ -136,10 +135,11 @@ export class EventListener {
           if (gameState <= 2) {
             console.log("READY TO PLAY");
             // Create a new Bot instance using playerId
-            const args = log.args as { owner: `0x${string}`, playerId: bigint };
+            const args = log.args as { owner: `0x${string}`, playerId: bigint, locationX: bigint };
+            const isTeamA = args.locationX === 0n;
             const id = this.env.BOT.idFromName(args.playerId.toString());
             const bot = this.env.BOT.get(id);
-            await bot.fetch(new Request(`http://bot/start?gameAddress=${log.address}&playerId=${args.playerId}`));
+            await bot.fetch(new Request(`http://bot/start?gameAddress=${log.address}&playerId=${args.playerId}&teamA=${isTeamA}`));
             break;
           } else {
             console.log("NOT READY TO PLAY", gameState);
@@ -235,7 +235,7 @@ export class EventListener {
   
     async fetch(request: Request): Promise<Response> {
       const url = new URL(request.url);
-      console.log("Fetching", url.pathname);
+      console.log("EventListener Fetching", url.pathname);
   
       if (url.pathname === "/start") {
         console.log("MATCH");
