@@ -11,10 +11,15 @@
 		{
 			"new_classes": [
 				"EventListener",
-				"Bot",
-				"Operator"
+				"Bot"
 			],
 			"tag": "v1"
+		},
+		{
+			"new_classes": [
+				"Operator"
+			],
+			"tag": "v2"
 		}
 	],
 	"durable_objects": {
