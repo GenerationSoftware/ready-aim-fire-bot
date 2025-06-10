@@ -11,7 +11,8 @@
 		{
 			"new_sqlite_classes": [
 				"EventListener",
-				"Bot"
+				"Bot",
+				"Operator"
 			],
 			"tag": "v1"
 		}
@@ -25,6 +26,10 @@
 			{
 				"class_name": "Bot",
 				"name": "BOT"
+			},
+			{ 
+				"class_name": "Operator",
+				"name": "OPERATOR"
 			}
 		]
 	},

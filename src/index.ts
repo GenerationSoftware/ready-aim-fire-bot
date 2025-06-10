@@ -1,6 +1,7 @@
 import { Env } from "./Env";
 import { EventListener } from "./EventListener";
 import { Bot } from "./Bot";
+import { Operator } from "./Operator";
 
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -8,7 +9,7 @@ export default {
 	},
 };
 
-export { EventListener, Bot };
+export { EventListener, Bot, Operator };
 
 async function handleRequest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 	const url = new URL(request.url);
@@ -16,7 +17,6 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
 	console.log("Index Fetching", url.pathname);
 
 	if (url.pathname === "/start") {
-		console.log("YESSSSS");
 		const id = env.EVENT_LISTENER.idFromName("event-listener");
 		const eventListener = env.EVENT_LISTENER.get(id);
 		return eventListener.fetch(request);

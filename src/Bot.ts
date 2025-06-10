@@ -116,22 +116,29 @@ export class Bot {
             args: [BigInt(this.playerId)]
           });
 
+          // Use multicall to get action types for all cards
+          const actionTypeCalls = playerCards.map(card => ({
+            address: this.env.BASIC_DECK_ADDRESS as `0x${string}`,
+            abi: BasicDeckABI,
+            functionName: 'tokenActionType',
+            args: [BigInt(card.tokenId)]
+          }));
+
+          const actionTypes = await publicClient.multicall({
+            contracts: actionTypeCalls
+          });
+
           // Filter for cards with action types 1, 3, or 4
-          const validCards = [];
-          for (const card of playerCards) {
-            console.log('Checking card tokenId:', card.tokenId);
-            const actionType = await publicClient.readContract({
-              address: this.env.BASIC_DECK_ADDRESS as `0x${string}`,
-              abi: BasicDeckABI,
-              functionName: 'tokenActionType',
-              args: [BigInt(card.tokenId)]
-            });
-            
-            console.log('Card action type:', actionType);
-            if ([1n, 3n, 4n].includes(actionType)) {
-              validCards.push(card);
+          const validCards = playerCards.filter((card, index) => {
+            const actionType = actionTypes[index].result;
+            if (actionType === undefined) {
+              console.log('Card tokenId:', card.tokenId, 'action type: undefined');
+              return false;
             }
-          }
+            const actionTypeBigInt = typeof actionType === 'string' ? BigInt(actionType) : actionType;
+            console.log('Card tokenId:', card.tokenId, 'action type:', actionTypeBigInt);
+            return [1n, 3n, 4n].includes(actionTypeBigInt);
+          });
 
           console.log('Valid cards found:', validCards.length);
 
@@ -164,7 +171,7 @@ export class Bot {
                 });
 
                 // Forward the transaction
-                const account = privateKeyToAccount(this.env.PRIVATE_KEY as `0x${string}`);
+                const account = privateKeyToAccount(this.env.BOT_PRIVATE_KEY as `0x${string}`);
                 const walletClient = createWalletClient({
                     account,
                     chain: arbitrum,
@@ -252,7 +259,11 @@ export class Bot {
       await this.state.storage.put("lastActionTime", Date.now());
 
       // Execute bot logic and set the alarm
-      await this.executeBotLogic();
+      try {
+        await this.executeBotLogic();
+      } catch (error) {
+        console.error("Error executing bot logic", error);
+      }
       await this.state.storage.setAlarm(Date.now() + 5000);
       return new Response("Bot started");
     }
