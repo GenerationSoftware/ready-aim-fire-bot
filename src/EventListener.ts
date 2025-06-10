@@ -25,7 +25,7 @@ export class EventListener {
       this.env = env;
     }
 
-    private async mapGameStarted(publicClient: PublicClient, gameAddresses: string[]): Promise<Record<string, number>> {
+    private async mapGameState(publicClient: PublicClient, gameAddresses: string[]): Promise<Record<string, number>> {
       const results: Record<string, number> = {};
 
       // Process logs in batches of 100
@@ -75,7 +75,7 @@ export class EventListener {
         }
       });
 
-      const gameStates = await this.mapGameStarted(publicClient, logs.map(log => log.address));
+      const gameStates = await this.mapGameState(publicClient, logs.map(log => log.address));
 
       for (const log of logs) {
         const gameAddress = log.address;
@@ -110,7 +110,7 @@ export class EventListener {
 
       console.log("GAMES CREATED WITH OPERATOR", gameAddresses);
 
-      const gameStates = await this.mapGameStarted(publicClient, gameAddresses);
+      const gameStates = await this.mapGameState(publicClient, gameAddresses);
 
       console.log("NUMBER OF GAME STATES", gameStates);
 

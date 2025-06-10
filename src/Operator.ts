@@ -58,6 +58,8 @@ export class Operator {
           functionName: 'nextTurn'
         });
 
+        console.log("Calling nextTurn for game ", this.gameAddress);
+
         // Forward the transaction
         const hash = await forwardTransaction(
           {
@@ -205,7 +207,7 @@ export class Operator {
   }
 
   async alarm() {
-    console.log("Operator wake up");
+    console.log("Operator wake up for game ", this.gameAddress);
     
     // Check if WebSocket is connected, if not try to reconnect
     if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
