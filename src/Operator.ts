@@ -25,8 +25,24 @@ export class Operator {
     this.env = env;
   }
 
-  private async checkAndAdvanceTurn() {
-    if (!this.gameAddress) return;
+  private opLog(this: Operator, ...args: any[]): void {
+    console.log({
+      origin: "OPERATOR",
+      gameAddress: this.gameAddress,
+      ...args
+    });
+  }
+
+  private opError(this: Operator, ...args: any[]): void {
+    console.error({
+      origin: "OPERATOR",
+      gameAddress: this.gameAddress,
+      ...args
+    });
+  }
+
+  private async checkAndAdvanceTurn(): Promise<boolean> {
+    if (!this.gameAddress) return false;
 
     const publicClient = createPublicClient({
       chain: arbitrum,
@@ -53,17 +69,17 @@ export class Operator {
       if (isTurnOver.status === 'failure' || gameState.status === 'failure') {
         console.error("Failed to get game state:", { isTurnOver, gameState });
         await this.state.storage.setAlarm(Date.now() + 1000);
-        return;
+        return false;
       }
 
       // Only proceed if game is still active (state <= 2)
       if (BigInt(gameState.result) > 2n) {
-        console.log("Game has ended, stopping operator");
-        return;
+        this.opLog("Game has ended, stopping operator");
+        return false;
       }
 
       if (isTurnOver.result) {
-        console.log("Turn has ended, advancing to next turn");
+        this.opLog("Turn has ended, advancing to next turn");
         
         // Create wallet client for sending transactions
         const account = privateKeyToAccount(this.env.OPERATOR_PRIVATE_KEY as `0x${string}`);
@@ -79,7 +95,7 @@ export class Operator {
           functionName: 'nextTurn'
         });
 
-        console.log("Calling nextTurn for game ", this.gameAddress);
+        this.opLog("Calling nextTurn for game ", this.gameAddress);
 
         // Forward the transaction
         let hash;
@@ -98,30 +114,30 @@ export class Operator {
           console.error("Error forwarding transaction:", error);
           // Schedule another check in 1 second
           await this.state.storage.setAlarm(Date.now() + 1000);
-          return;
+          return true;
         }
 
-        console.log("Next turn transaction forwarded:", hash);
+        this.opLog("Next turn transaction forwarded:", hash);
 
         // Wait for transaction receipt only if we have a valid hash
         if (hash) {
           try {
             const receipt = await publicClient.waitForTransactionReceipt({ hash });
-            console.log("Next turn transaction confirmed:", receipt);
+            this.opLog("Next turn transaction confirmed:", receipt);
           } catch (error) {
             console.error("Error waiting for transaction receipt:", error);
             // Schedule another check in 1 second
             await this.state.storage.setAlarm(Date.now() + 1000);
-            return;
+            return true;
           }
         } else {
-          console.error("No transaction hash received from forwardTransaction");
+          console.error("No transaction hash received from forwardTransaction for game ", this.gameAddress);
           // Schedule another check in 1 second
           await this.state.storage.setAlarm(Date.now() + 1000);
-          return;
+          return true;
         }
 
-        console.log("Reading currentTurnEndsAt");
+        this.opLog("Reading currentTurnEndsAt");
 
         // Get the new turn end time
         const currentTurnEndsAt = await publicClient.readContract({
@@ -130,12 +146,12 @@ export class Operator {
           functionName: 'currentTurnEndsAt'
         });
 
-        console.log("Scheduling next check at", currentTurnEndsAt);
+        this.opLog("Scheduling next check at", currentTurnEndsAt);
 
         // Schedule next check at turn end time
         await this.state.storage.setAlarm(Number(currentTurnEndsAt) * 1000);
       } else {
-        console.log("Turn has not ended, checking again in 1 second");
+        this.opLog("Turn has not ended, checking again in 1 second");
         // Check again in 1 second
         await this.state.storage.setAlarm(Date.now() + 1000);
       }
@@ -144,6 +160,8 @@ export class Operator {
       // On error, try again in 5 seconds
       await this.state.storage.setAlarm(Date.now() + 5000);
     }
+
+    return true;
   }
 
   private async connect() {
@@ -151,12 +169,12 @@ export class Operator {
 
     // Convert HTTP URL to WebSocket URL
     const wsUrl = this.env.ETH_RPC_URL.replace('http://', 'ws://').replace('https://', 'wss://');
-    console.log("Connecting to WebSocket", wsUrl);
+    this.opLog("Connecting to WebSocket", wsUrl);
 
     const ws = new WebSocket(wsUrl) as WebSocket & WebSocketEventHandlers;
 
     ws.onopen = () => {
-      console.log("✅ WebSocket connected");
+      this.opLog("✅ WebSocket connected");
 
       // Get the EndedTurnEvent from the ABI
       const endedTurnEvent = ReadyAimFireABI.find(
@@ -187,7 +205,7 @@ export class Operator {
         ]
       };
 
-      console.log("Subscribing with payload:", JSON.stringify(subscribePayload));
+      this.opLog("Subscribing with payload:", JSON.stringify(subscribePayload));
       ws.send(JSON.stringify(subscribePayload));
     };
 
@@ -195,7 +213,7 @@ export class Operator {
       try {
         const data = JSON.parse(event.data as string);
         if (data.method === "eth_subscription") {
-          console.log("📦 EndedTurnEvent received");
+          this.opLog("📦 EndedTurnEvent received");
           await this.checkAndAdvanceTurn();
         }
       } catch (err) {
@@ -204,7 +222,7 @@ export class Operator {
     };
 
     ws.onclose = () => {
-      console.log("🔁 WebSocket closed, retrying...");
+      this.opLog("🔁 WebSocket closed, retrying...");
       this.websocket = null;
       setTimeout(() => this.connect(), 5000);
     };
@@ -267,6 +285,10 @@ export class Operator {
       }
     }
 
-    await this.checkAndAdvanceTurn();
+    if (!await this.checkAndAdvanceTurn()) {
+      // Game is over or we don't need to continue, clean up resources
+      await this.state.storage.deleteAll();
+      console.log("Operator resources released - game ended or no longer needed");
+    }
   }
 }
