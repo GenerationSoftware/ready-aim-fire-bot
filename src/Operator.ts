@@ -100,6 +100,8 @@ export class Operator {
           return;
         }
 
+        console.log("Reading currentTurnEndsAt");
+
         // Get the new turn end time
         const currentTurnEndsAt = await publicClient.readContract({
           address: this.gameAddress as `0x${string}`,
@@ -107,9 +109,12 @@ export class Operator {
           functionName: 'currentTurnEndsAt'
         });
 
+        console.log("Scheduling next check at", currentTurnEndsAt);
+
         // Schedule next check at turn end time
         await this.state.storage.setAlarm(Number(currentTurnEndsAt) * 1000);
       } else {
+        console.log("Turn has not ended, checking again in 1 second");
         // Check again in 1 second
         await this.state.storage.setAlarm(Date.now() + 1000);
       }

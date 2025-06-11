@@ -176,7 +176,7 @@ export class EventListener {
       if (url.pathname === "/start") {
         try {
           await this.checkMint(this.env.BOT_ADDRESS);
-          console.log("Mint check complete");
+          // console.log("Mint check complete");
           const currentBlock = await this.checkLogsAndStartBots(0n);
           await this.state.storage.put("latestBlock", currentBlock.toString());
           await this.state.storage.setAlarm(Date.now() + 5000);
@@ -187,7 +187,7 @@ export class EventListener {
           return new Response(`Error: ${errorMessage}`, { status: 500 });
         }
       } else {
-        console.log("NO MATCH");
+        // console.log("NO MATCH");
       }
   
       return new Response("Not found", { status: 404 });
@@ -202,8 +202,8 @@ export class EventListener {
         transport: http(this.env.ETH_RPC_URL)
       });
 
-      console.log("Checking mint status for address:", address);
-      console.log("Using Minter contract at:", this.env.MINTER_ADDRESS);
+      // console.log("Checking mint status for address:", address);
+      // console.log("Using Minter contract at:", this.env.MINTER_ADDRESS);
 
       // Check if player has already minted
       const hasMinted = await publicClient.readContract({
@@ -216,14 +216,14 @@ export class EventListener {
         throw error;
       });
 
-      console.log("Mint status:", hasMinted);
+      // console.log("Mint status:", hasMinted);
 
       if (hasMinted) {
-        console.log("Player has already minted");
+        // console.log("Player has already minted");
         return true;
       }
 
-      console.log("Player has not minted, proceeding with mint transaction");
+      // console.log("Player has not minted, proceeding with mint transaction");
 
       // Create wallet client for sending transactions
       const account = privateKeyToAccount(this.env.BOT_PRIVATE_KEY as `0x${string}`);
@@ -240,7 +240,7 @@ export class EventListener {
         args: [address as `0x${string}`]
       });
 
-      console.log("Encoded mintCollection data:", data);
+      // console.log("Encoded mintCollection data:", data);
 
       // Forward the transaction using the forwarder
       const hash = await forwardTransaction(
@@ -254,7 +254,7 @@ export class EventListener {
         this.env.ERC2771_FORWARDER_ADDRESS as `0x${string}`
       );
 
-      console.log("Mint transaction forwarded:", hash);
+      // console.log("Mint transaction forwarded:", hash);
       return false;
     } catch (error) {
       console.error("Error in checkMint:", error);

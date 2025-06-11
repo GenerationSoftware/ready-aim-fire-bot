@@ -69,13 +69,13 @@ export class Bot {
       this.teamA = storedTeamA;
 
       const botLog = (message: string, ...args: any[]) => {
-        console.log({
-          origin: "BOT",
-          gameAddress: this.gameAddress,
-          playerId: this.playerId,
-          message,
-          arguments: args
-        });
+        // console.log({
+        //   origin: "BOT",
+        //   gameAddress: this.gameAddress,
+        //   playerId: this.playerId,
+        //   message,
+        //   arguments: args
+        // });
       };
 
       const botError = (message: string, ...args: any[]) => {
@@ -179,7 +179,7 @@ export class Bot {
                 // Select a random enemy
                 const randomEnemy = enemyPlayers[Math.floor(Math.random() * enemyPlayers.length)];
 
-                console.log('Playing card against player:', randomEnemy.playerId);
+                botLog('Playing card against player:', randomEnemy.playerId);
 
                 // Prepare the action
                 const actionParams = encodePacked(
