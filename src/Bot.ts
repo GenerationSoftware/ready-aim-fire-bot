@@ -143,6 +143,7 @@ export class Bot {
           console.log('Valid cards found:', validCards.length);
 
           while (currentEnergy > 0n) {
+            console.log("Current energy:", currentEnergy);
             if (validCards.length > 0) {
               // Select a random valid card
               const randomCard = validCards[Math.floor(Math.random() * validCards.length)];

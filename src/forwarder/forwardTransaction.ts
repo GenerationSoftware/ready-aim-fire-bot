@@ -97,7 +97,6 @@ export const forwardTransaction = async (params: ForwardTransactionParams, walle
 
     // Get the response text first to check what we're actually getting
     const responseText = await response.text()
-    console.log('Relayer response text:', responseText)
 
     let result: RelayerResponse
     try {
@@ -109,6 +108,11 @@ export const forwardTransaction = async (params: ForwardTransactionParams, walle
 
     if (!response.ok) {
       throw new Error(result.error || 'Failed to forward transaction')
+    }
+
+    if (!result.transactionHash) {
+      console.error('No transaction hash in relayer response:', result);
+      throw new Error('No transaction hash received from relayer');
     }
 
     return result.transactionHash

@@ -2,7 +2,7 @@ import { Env } from "./Env";
 import { ReadyAimFireABI } from "./abis/ReadyAimFireABI";
 import { ReadyAimFireFactoryABI } from "./abis/ReadyAimFireFactoryABI";
 import { MinterABI } from "./abis/MinterABI";
-import { createPublicClient, createWalletClient, http, encodeFunctionData } from "viem";
+import { createPublicClient, createWalletClient, http, encodeFunctionData, PublicClient, Log } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
 import { forwardTransaction } from "./forwarder/forwardTransaction";
@@ -75,9 +75,20 @@ export class EventListener {
         }
       });
 
-      const gameStates = await this.mapGameState(publicClient, logs.map(log => log.address));
+      console.log("Found games with bots: ", logs.length, logs.map(log => log.address));
 
-      for (const log of logs) {
+      // Get stored game addresses
+      const storedGames = await this.state.storage.get("gameAddresses") as Set<string> || new Set<string>();
+      console.log("Stored games: ", storedGames);
+      
+      // Filter logs to only include games in our stored set
+      const filteredLogs = logs.filter(log => storedGames.has(log.address.toLowerCase().toString()));
+
+      console.log("Filtered player joined logs:", filteredLogs.length, "out of", logs.length);
+
+      const gameStates = await this.mapGameState(publicClient, filteredLogs.map(log => log.address));
+
+      for (const log of filteredLogs) {
         const gameAddress = log.address;
         const gameState = gameStates[gameAddress];
         if (gameState <= 2) {
@@ -101,14 +112,29 @@ export class EventListener {
         event: createdGameEvent,
         fromBlock: fromBlock,
         toBlock: toBlock,
+        address: this.env.FACTORY_ADDRESS as `0x${string}`,
         args: {
           operator: this.env.OPERATOR_ADDRESS as `0x${string}`
         }
       });
 
-      const gameAddresses = logs.map(log => log.args.gameAddress);
+      const gameAddresses = logs.map(log => {
+        const args = log.args as { gameAddress: `0x${string}` };
+        return args.gameAddress.toLowerCase();
+      });
 
       console.log("GAMES CREATED WITH OPERATOR", gameAddresses);
+
+      // Get existing game addresses from storage
+      const existingGames = await this.state.storage.get("gameAddresses") as Set<string> || new Set<string>();
+      
+      // Add new game addresses to the set
+      for (const gameAddress of gameAddresses) {
+        existingGames.add(gameAddress.toString());
+      }
+
+      // Store updated set back in storage
+      await this.state.storage.put("gameAddresses", existingGames);
 
       const gameStates = await this.mapGameState(publicClient, gameAddresses);
 
@@ -116,7 +142,8 @@ export class EventListener {
 
       for (const gameAddress of gameAddresses) {
         const gameState = gameStates[gameAddress];
-        if (gameState == 2) {
+        console.log("GAME STATE", gameAddress, gameState);
+        if (gameState <= 2) {
           console.log("GAME STARTED WITH OPERATOR", gameAddress);
           const id = this.env.OPERATOR.idFromName(gameAddress.toString());
           const operator = this.env.OPERATOR.get(id);

@@ -61,22 +61,44 @@ export class Operator {
         console.log("Calling nextTurn for game ", this.gameAddress);
 
         // Forward the transaction
-        const hash = await forwardTransaction(
-          {
-            to: this.gameAddress as `0x${string}`,
-            data: data,
-            rpcUrl: this.env.ETH_RPC_URL,
-            relayerUrl: this.env.RELAYER_URL
-          },
-          walletClient,
-          this.env.ERC2771_FORWARDER_ADDRESS as `0x${string}`
-        );
+        let hash;
+        try {
+          hash = await forwardTransaction(
+            {
+              to: this.gameAddress as `0x${string}`,
+              data: data,
+              rpcUrl: this.env.ETH_RPC_URL,
+              relayerUrl: this.env.RELAYER_URL
+            },
+            walletClient,
+            this.env.ERC2771_FORWARDER_ADDRESS as `0x${string}`
+          );
+        } catch (error) {
+          console.error("Error forwarding transaction:", error);
+          // Schedule another check in 1 second
+          await this.state.storage.setAlarm(Date.now() + 1000);
+          return;
+        }
 
         console.log("Next turn transaction forwarded:", hash);
 
-        // Wait for transaction receipt
-        const receipt = await publicClient.waitForTransactionReceipt({ hash });
-        console.log("Next turn transaction confirmed:", receipt);
+        // Wait for transaction receipt only if we have a valid hash
+        if (hash) {
+          try {
+            const receipt = await publicClient.waitForTransactionReceipt({ hash });
+            console.log("Next turn transaction confirmed:", receipt);
+          } catch (error) {
+            console.error("Error waiting for transaction receipt:", error);
+            // Schedule another check in 1 second
+            await this.state.storage.setAlarm(Date.now() + 1000);
+            return;
+          }
+        } else {
+          console.error("No transaction hash received from forwardTransaction");
+          // Schedule another check in 1 second
+          await this.state.storage.setAlarm(Date.now() + 1000);
+          return;
+        }
 
         // Get the new turn end time
         const currentTurnEndsAt = await publicClient.readContract({
