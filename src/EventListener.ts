@@ -1,7 +1,7 @@
 import { Env } from "./Env";
-import { ReadyAimFireABI } from "./abis/ReadyAimFireABI";
-import { ReadyAimFireFactoryABI } from "./abis/ReadyAimFireFactoryABI";
-import { MinterABI } from "./abis/MinterABI";
+import ReadyAimFireABI from "./abis/ReadyAimFire.json";
+import ReadyAimFireFactoryABI from "./abis/ReadyAimFireFactory.json";
+import MinterABI from "./abis/Minter.json";
 import { createPublicClient, createWalletClient, http, encodeFunctionData, PublicClient, Log } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";

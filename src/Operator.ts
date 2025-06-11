@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { Env } from "./Env";
-import { ReadyAimFireABI } from "./abis/ReadyAimFireABI";
+import ReadyAimFireABI from "./abis/ReadyAimFire.json";
 import { createPublicClient, createWalletClient, http, encodeFunctionData, encodeEventTopics } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";

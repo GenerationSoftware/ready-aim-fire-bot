@@ -2,8 +2,8 @@ import { Env } from "./Env";
 import { createPublicClient, http, createWalletClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
-import { ReadyAimFireABI } from "./abis/ReadyAimFireABI";
-import { BasicDeckABI } from "./abis/BasicDeckABI";
+import ReadyAimFireABI from "./abis/ReadyAimFire.json";
+import BasicDeckABI from "./abis/BasicDeck.json";
 import { encodeFunctionData, encodePacked } from "viem";
 import { forwardTransaction } from "./forwarder/forwardTransaction";
 
@@ -238,6 +238,9 @@ export class Bot {
               break;
             }
           }
+
+          // end turn
+          
 
         } else {
           botLog("Not time to play yet");
