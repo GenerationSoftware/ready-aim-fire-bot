@@ -75,11 +75,10 @@ export class EventListener {
         }
       });
 
-      console.log("Found games with bots: ", logs.length, logs.map(log => log.address));
+      console.log("Found games with bots: ", logs.length);
 
       // Get stored game addresses
       const storedGames = await this.state.storage.get("gameAddresses") as Set<string> || new Set<string>();
-      console.log("Stored games: ", storedGames);
       
       // Filter logs to only include games in our stored set
       const filteredLogs = logs.filter(log => storedGames.has(log.address.toLowerCase().toString()));
@@ -123,7 +122,7 @@ export class EventListener {
         return args.gameAddress.toLowerCase();
       });
 
-      console.log("GAMES CREATED WITH OPERATOR", gameAddresses);
+      console.log("GAMES CREATED WITH OPERATOR", gameAddresses.length);
 
       // Get existing game addresses from storage
       const existingGames = await this.state.storage.get("gameAddresses") as Set<string> || new Set<string>();
@@ -137,8 +136,6 @@ export class EventListener {
       await this.state.storage.put("gameAddresses", existingGames);
 
       const gameStates = await this.mapGameState(publicClient, gameAddresses);
-
-      console.log("NUMBER OF GAME STATES", gameStates);
 
       for (const gameAddress of gameAddresses) {
         const gameState = gameStates[gameAddress];
@@ -267,7 +264,7 @@ export class EventListener {
 
 
     async alarm() {
-      console.log("Alarm received");
+      console.log("EventListener waking up...");
       
       const latestBlock = await this.state.storage.get("latestBlock") as string | undefined;
       const fromBlock = latestBlock ? BigInt(latestBlock) : 0n;

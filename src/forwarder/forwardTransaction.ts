@@ -93,7 +93,6 @@ export const forwardTransaction = async (params: ForwardTransactionParams, walle
 
     // Log the response status and headers for debugging
     console.log('Relayer response status:', response.status)
-    console.log('Relayer response headers:', Object.fromEntries(response.headers.entries()))
 
     // Get the response text first to check what we're actually getting
     const responseText = await response.text()

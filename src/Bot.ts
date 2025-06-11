@@ -13,6 +13,7 @@ interface Player {
   teamA: boolean;
 }
 
+
 export class Bot {
   private state: DurableObjectState;
   private env: Env;
@@ -66,9 +67,30 @@ export class Bot {
       this.gameAddress = storedGameAddress;
       this.playerId = storedPlayerId;
       this.teamA = storedTeamA;
-      console.log(`Game Address: ${this.gameAddress}, Player ID: ${this.playerId}, Team A: ${this.teamA}`);
+
+      const botLog = (message: string, ...args: any[]) => {
+        console.log({
+          origin: "BOT",
+          gameAddress: this.gameAddress,
+          playerId: this.playerId,
+          message,
+          arguments: args
+        });
+      };
+
+      const botError = (message: string, ...args: any[]) => {
+        console.error({
+          origin: "BOT",
+          gameAddress: this.gameAddress,
+          playerId: this.playerId,
+          message,
+          arguments: args
+        });
+      };
+
+      botLog(`executeBotLogic`, { gameAddress: this.gameAddress, playerId: this.playerId, teamA: this.teamA});
       if (players) {
-        console.log('Players:', players);
+        botLog('Players', players);
       }
 
       // Create public client for game state checks
@@ -84,7 +106,7 @@ export class Bot {
         functionName: 'getGameState'
       });
 
-      console.log('Current game state:', gameState);
+      botLog('executeBotLogic', { gameAddress: this.gameAddress, gameState });
 
       if (BigInt(gameState) === 2n) {
         // Check if it's our team's turn
@@ -95,7 +117,7 @@ export class Bot {
         });
 
         if (isTeamATurn === this.teamA) {
-          console.log("It's our turn to play!");
+          botLog("It's our turn to play!");
 
           // Get our player stats to check energy
           const playerStats = await publicClient.readContract({
@@ -106,7 +128,7 @@ export class Bot {
           });
 
           let currentEnergy = playerStats[1]; // Second field is energy
-          console.log('Current energy:', currentEnergy);
+          botLog('Current energy', { currentEnergy });
 
           // Get our cards
           const playerCards = await publicClient.readContract({
@@ -132,24 +154,24 @@ export class Bot {
           const validCards = playerCards.filter((card, index) => {
             const actionType = actionTypes[index].result;
             if (actionType === undefined) {
-              console.log('Card tokenId:', card.tokenId, 'action type: undefined');
+              botError('Undefined action type', { tokenId: card.tokenId });
               return false;
             }
             const actionTypeBigInt = typeof actionType === 'string' ? BigInt(actionType) : actionType;
-            console.log('Card tokenId:', card.tokenId, 'action type:', actionTypeBigInt);
+            botLog('Card info', { tokenId: card.tokenId, actionType: actionTypeBigInt});
             return [1n, 3n, 4n].includes(actionTypeBigInt);
           });
 
-          console.log('Valid cards found:', validCards.length);
+          botLog('Valid cards', { validCards: validCards.length });
 
           while (currentEnergy > 0n) {
-            console.log("Current energy:", currentEnergy);
+            botLog("Remaining energy", { currentEnergy });
             if (validCards.length > 0) {
               // Select a random valid card
               const randomCard = validCards[Math.floor(Math.random() * validCards.length)];
               const cardIndex = playerCards.indexOf(randomCard);
 
-              console.log('Playing card index:', cardIndex);
+              botLog('Playing card index:', cardIndex);
 
               // Get enemy players
               const enemyPlayers = (players as Player[]).filter(p => p.teamA !== this.teamA);
@@ -190,7 +212,7 @@ export class Bot {
                   this.env.ERC2771_FORWARDER_ADDRESS as `0x${string}`
                 );
 
-                console.log(`Played card ${cardIndex} against player ${randomEnemy.playerId}, tx: ${hash}`);
+                botLog(`Played card ${cardIndex} against player ${randomEnemy.playerId}, tx: ${hash}`);
 
                 // Wait for transaction to be mined
                 await publicClient.waitForTransactionReceipt({ hash });
@@ -203,28 +225,28 @@ export class Bot {
                   args: [BigInt(this.playerId)]
                 });
                 currentEnergy = updatedStats[1];
-                console.log('Updated energy:', currentEnergy);
+                botLog('Updated energy:', currentEnergy);
                 
                 // Update last action time
                 await this.state.storage.put("lastActionTime", Date.now());
               } else {
-                console.log('No enemy players found');
+                botLog('No enemy players found');
                 break;
               }
             } else {
-              console.log('No valid cards found');
+              botLog('No valid cards found');
               break;
             }
           }
 
         } else {
-          console.log("Not time to play yet");
+          botLog("Not time to play yet");
         }
       } else {
         if (BigInt(gameState) < 2n) {
-            console.log("Game not started yet");
+            botLog("Game not started yet");
         } else if (BigInt(gameState) > 2n) {
-            console.log("Game ended");
+            botLog("Game ended");
             return false;
         }
       }
@@ -232,7 +254,7 @@ export class Bot {
       // If no action was taken in this execution, check the timeout
       const TEN_MINUTES = 10 * 60 * 1000; // 10 minutes in milliseconds
       if (Date.now() - lastActionTime > TEN_MINUTES) {
-        console.log("No action taken in 10 minutes, releasing resources");
+        botLog("No action taken in 10 minutes, releasing resources");
         return false;
       }
     }
