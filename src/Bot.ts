@@ -240,8 +240,48 @@ export class Bot {
           }
 
           // end turn
-          
+          const currentTurn = await publicClient.readContract({
+            address: this.gameAddress as `0x${string}`,
+            abi: ReadyAimFireABI,
+            functionName: 'currentTurn'
+          });
 
+          const hasEndedTurn = await publicClient.readContract({
+            address: this.gameAddress as `0x${string}`,
+            abi: ReadyAimFireABI,
+            functionName: 'playerEndedTurn',
+            args: [BigInt(this.playerId), currentTurn]
+          });
+
+          if (!hasEndedTurn) {
+            botLog('Ending turn');
+            const encodedData = encodeFunctionData({
+              abi: ReadyAimFireABI,
+              functionName: 'endTurn'
+            });
+
+            const account = privateKeyToAccount(this.env.BOT_PRIVATE_KEY as `0x${string}`);
+            const walletClient = createWalletClient({
+              account,
+              chain: arbitrum,
+              transport: http(this.env.ETH_RPC_URL)
+            });
+
+            const hash = await forwardTransaction(
+              {
+                to: this.gameAddress as `0x${string}`,
+                data: encodedData,
+                rpcUrl: this.env.ETH_RPC_URL,
+                relayerUrl: this.env.RELAYER_URL
+              },
+              walletClient,
+              this.env.ERC2771_FORWARDER_ADDRESS as `0x${string}`
+            );
+
+            botLog(`Ended turn, tx: ${hash}`);
+            await publicClient.waitForTransactionReceipt({ hash });
+          }
+          
         } else {
           botLog("Not time to play yet");
         }
