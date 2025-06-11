@@ -78,7 +78,15 @@ export class Operator {
         return false;
       }
 
-      if (isTurnOver.result) {
+      if (BigInt(gameState.result) == 1n) {
+        this.opLog("Game has not started, delaying");
+        await this.state.storage.setAlarm(Date.now() + 5000);
+        return true;
+      }
+
+      console.log("GAME STATATETETET", gameState.result);
+
+      if (BigInt(gameState.result) == 2n && isTurnOver.result) {
         this.opLog("Turn has ended, advancing to next turn");
         
         // Create wallet client for sending transactions
@@ -176,37 +184,44 @@ export class Operator {
     ws.onopen = () => {
       this.opLog("✅ WebSocket connected");
 
-      // Get the EndedTurnEvent from the ABI
-      const endedTurnEvent = ReadyAimFireABI.find(
-        (item) => item.type === "event" && item.name === "EndedTurnEvent"
-      );
+      const subscribeToEvent = (eventName: string) => {
+        // Get the EndedTurnEvent from the ABI
+        const endedTurnEvent = ReadyAimFireABI.find(
+          (item) => item.type === "event" && item.name === eventName
+        );
 
-      if (!endedTurnEvent) {
-        throw new Error("EndedTurnEvent not found in ABI");
-      }
+        if (!endedTurnEvent) {
+          throw new Error(`${eventName} not found in ABI`);
+        }
 
-      // Get the event topic using viem's encodeEventTopics
-      const eventTopic = encodeEventTopics({
-        abi: [endedTurnEvent],
-        eventName: 'EndedTurnEvent'
-      })[0];
+        // Get the event topic using viem's encodeEventTopics
+        const eventTopic = encodeEventTopics({
+          abi: [endedTurnEvent],
+          eventName: eventName as "EndedTurnEvent" | "GameStartedEvent" | "NextTurnEvent" | "OwnershipTransferred" | "PlayerActionEvent" | "PlayerJoinedEvent" | "PlayerStatUpdatedEvent"
+        })[0];
 
-      // Subscribe to EndedTurnEvent
-      const subscribePayload = {
-        jsonrpc: '2.0',
-        id: 1,
-        method: "eth_subscribe",
-        params: [
-          "logs",
-          {
-            address: this.gameAddress,
-            topics: [eventTopic]
-          }
-        ]
+        // Subscribe to EndedTurnEvent
+        const subscribePayload = {
+          jsonrpc: '2.0',
+          id: 1,
+          method: "eth_subscribe",
+          params: [
+            "logs",
+            {
+              address: this.gameAddress,
+              topics: [eventTopic]
+            }
+          ]
+        };
+
+        return subscribePayload;
       };
 
-      this.opLog("Subscribing with payload:", JSON.stringify(subscribePayload));
-      ws.send(JSON.stringify(subscribePayload));
+      this.opLog("Subscribing to EndedTurnEvent...");
+      ws.send(JSON.stringify(subscribeToEvent('EndedTurnEvent')));
+      
+      this.opLog("Subscribing to GameStartedEvent...");
+      ws.send(JSON.stringify(subscribeToEvent('GameStartedEvent')));
     };
 
     ws.onmessage = async (event: MessageEvent) => {
@@ -253,19 +268,7 @@ export class Operator {
         console.error("Error connecting to WebSocket", error);
       }
 
-      // Get initial turn end time and set alarm
-      const publicClient = createPublicClient({
-        chain: arbitrum,
-        transport: http(this.env.ETH_RPC_URL)
-      });
-
-      const currentTurnEndsAt = await publicClient.readContract({
-        address: this.gameAddress as `0x${string}`,
-        abi: ReadyAimFireABI,
-        functionName: 'currentTurnEndsAt'
-      });
-
-      await this.state.storage.setAlarm(Number(currentTurnEndsAt) * 1000);
+      await this.state.storage.setAlarm(Date.now() + 5000);
       return new Response("Operator started");
     }
 
