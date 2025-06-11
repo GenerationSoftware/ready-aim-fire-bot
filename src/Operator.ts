@@ -34,14 +34,35 @@ export class Operator {
     });
 
     try {
-      // Check if turn has ended
-      const isTurnOver = await publicClient.readContract({
-        address: this.gameAddress as `0x${string}`,
-        abi: ReadyAimFireABI,
-        functionName: 'isTurnOver'
+      // Check if turn has ended and game state using multicall
+      const [isTurnOver, gameState] = await publicClient.multicall({
+        contracts: [
+          {
+            address: this.gameAddress as `0x${string}`,
+            abi: ReadyAimFireABI,
+            functionName: 'isTurnOver'
+          },
+          {
+            address: this.gameAddress as `0x${string}`,
+            abi: ReadyAimFireABI,
+            functionName: 'getGameState'
+          }
+        ]
       });
 
-      if (isTurnOver) {
+      if (isTurnOver.status === 'failure' || gameState.status === 'failure') {
+        console.error("Failed to get game state:", { isTurnOver, gameState });
+        await this.state.storage.setAlarm(Date.now() + 1000);
+        return;
+      }
+
+      // Only proceed if game is still active (state <= 2)
+      if (BigInt(gameState.result) > 2n) {
+        console.log("Game has ended, stopping operator");
+        return;
+      }
+
+      if (isTurnOver.result) {
         console.log("Turn has ended, advancing to next turn");
         
         // Create wallet client for sending transactions
@@ -120,8 +141,8 @@ export class Operator {
       }
     } catch (error) {
       console.error("Error in checkAndAdvanceTurn:", error);
-      // On error, try again in 1 second
-      await this.state.storage.setAlarm(Date.now() + 1000);
+      // On error, try again in 5 seconds
+      await this.state.storage.setAlarm(Date.now() + 5000);
     }
   }
 
