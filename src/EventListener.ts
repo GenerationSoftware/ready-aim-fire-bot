@@ -179,8 +179,12 @@ export class EventListener {
         }
         await this.state.storage.setAlarm(Date.now() + 5000);
         return new Response("Awaiting games.");
+      } else if (url.pathname === "/reset") {
+        await this.state.storage.deleteAlarm();
+        await this.state.storage.deleteAll();
+        return new Response("Reset listener");
       }
-  
+
       return new Response("Not found", { status: 404 });
     }
 
