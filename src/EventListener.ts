@@ -150,7 +150,6 @@ export class EventListener {
     }
 
     private async checkLogsAndStartBots(fromBlock: bigint): Promise<bigint> {
-      try {
         // Create a public client for reading contract state
         const publicClient = createPublicClient({
           chain: arbitrum,
@@ -164,10 +163,6 @@ export class EventListener {
         await this.checkOperators(publicClient, fromBlock, currentBlock);
         
         return currentBlock;
-      } catch (error) {
-        console.error("Error in checkLogsAndStartBots:", error);
-        throw error;
-      }
     }
   
     async fetch(request: Request): Promise<Response> {
@@ -175,24 +170,19 @@ export class EventListener {
   
       if (url.pathname === "/start") {
         try {
-          await this.checkMint(this.env.BOT_ADDRESS);
-          // console.log("Mint check complete");
-          const currentBlock = await this.checkLogsAndStartBots(0n);
-          await this.state.storage.put("latestBlock", currentBlock.toString());
-          await this.state.storage.setAlarm(Date.now() + 5000);
-          return new Response("Awaiting games.");
+          await this.doWork();
         } catch (error: unknown) {
           console.error("Error in /start:", error);
           const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-          return new Response(`Error: ${errorMessage}`, { status: 500 });
+          await this.state.storage.setAlarm(Date.now() + 5000);
+          return new Response(`Error starting bot: ${errorMessage}.  Re-trying in 5 seconds`, { status: 500 });
         }
-      } else {
-        // console.log("NO MATCH");
+        await this.state.storage.setAlarm(Date.now() + 5000);
+        return new Response("Awaiting games.");
       }
   
       return new Response("Not found", { status: 404 });
     }
-
 
   private async checkMint(address: string): Promise<boolean> {
     try {
@@ -262,14 +252,21 @@ export class EventListener {
     }
   }
 
+  async doWork() {
+    await this.checkMint(this.env.BOT_ADDRESS);
+    const latestBlock = await this.state.storage.get("latestBlock") as string | undefined;
+    const fromBlock = latestBlock ? BigInt(latestBlock) : 0n;
+    const currentBlock = await this.checkLogsAndStartBots(fromBlock);
+    await this.state.storage.put("latestBlock", currentBlock.toString());
+  }
 
     async alarm() {
       console.log("EventListener waking up...");
-      
-      const latestBlock = await this.state.storage.get("latestBlock") as string | undefined;
-      const fromBlock = latestBlock ? BigInt(latestBlock) : 0n;
-      const currentBlock = await this.checkLogsAndStartBots(fromBlock);
-      await this.state.storage.put("latestBlock", currentBlock.toString());
+      try {
+        await this.doWork();
+      } catch (error) {
+        console.error("Error in alarm:", error);
+      }
       await this.state.storage.setAlarm(Date.now() + 5000);
     }
   }
