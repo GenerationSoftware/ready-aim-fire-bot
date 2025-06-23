@@ -2,6 +2,7 @@ import { Env } from "./Env";
 import BattleABI from "./contracts/abis/Battle.json";
 import BattleFactoryABI from "./contracts/abis/BattleFactory.json";
 import MinterABI from "./contracts/abis/Minter.json";
+import ZigguratABI from "./contracts/abis/Ziggurat.json";
 import { createPublicClient, createWalletClient, http, encodeFunctionData, PublicClient, Log, type Abi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
@@ -61,7 +62,7 @@ export class OperatorManager {
       return results
     }
 
-    private async checkPlayerJoined(publicClient: PublicClient, fromBlock: bigint, toBlock: bigint) {
+    private async checkCharacterOperators(publicClient: PublicClient, fromBlock: bigint, toBlock: bigint) {
       const playerJoinedEvent = (BattleABI as Abi).find(item => item.type === 'event' && 'name' in item && item.name === 'PlayerJoinedEvent') as any;
       if (!playerJoinedEvent) {
         throw new Error('PlayerJoinedEvent not found in ABI');
@@ -72,7 +73,7 @@ export class OperatorManager {
         fromBlock: fromBlock,
         toBlock: toBlock,
         args: {
-          owner: this.env.BOT_ADDRESS as `0x${string}`
+          owner: this.env.OPERATOR_ADDRESS as `0x${string}`
         }
       });
 
@@ -102,7 +103,7 @@ export class OperatorManager {
       }
     }
 
-    private async checkOperators(publicClient: PublicClient, fromBlock: bigint, toBlock: bigint) {
+    private async checkBattleOperators(publicClient: PublicClient, fromBlock: bigint, toBlock: bigint) {
       const createdGameEvent = (BattleFactoryABI as Abi).find(item => item.type === 'event' && 'name' in item && item.name === 'CreatedGame') as any;
       if (!createdGameEvent) {
         throw new Error('CreatedGame not found in ABI');
@@ -150,6 +151,34 @@ export class OperatorManager {
       }
     }
 
+    private async checkZigguratOperators(publicClient: PublicClient, fromBlock: bigint, toBlock: bigint) {
+      const partyStartedEvent = (ZigguratABI as Abi).find(item => item.type === 'event' && 'name' in item && item.name === 'PartyStartedEvent') as any;
+      if (!partyStartedEvent) {
+        throw new Error('PartyStartedEvent not found in ABI');
+      }
+
+      const logs = await publicClient.getLogs({
+        event: partyStartedEvent,
+        fromBlock: fromBlock,
+        toBlock: toBlock,
+        address: CONTRACT_ADDRESSES.ZIGGURAT as `0x${string}`
+      });
+
+      console.log("ZIGGURAT PARTIES STARTED", logs.length);
+
+      for (const log of logs) {
+        const args = (log as any).args as { partyId: bigint };
+        const partyId = args.partyId.toString();
+        
+        console.log("PARTY STARTED", partyId, "on Ziggurat", log.address);
+        
+        // Start a ZigguratOperator for this Ziggurat instance
+        const id = this.env.ZIGGURAT_OPERATOR.idFromName(log.address.toString());
+        const zigguratOperator = this.env.ZIGGURAT_OPERATOR.get(id);
+        zigguratOperator.fetch(new Request(`http://ziggurat-operator/start?zigguratAddress=${log.address}`));
+      }
+    }
+
     private async checkLogsAndStartBots(fromBlock: bigint): Promise<bigint> {
         // Create a public client for reading contract state
         const publicClient = createPublicClient({
@@ -160,8 +189,9 @@ export class OperatorManager {
         // Get logs from the specified block
         const currentBlock = await publicClient.getBlockNumber();
 
-        await this.checkPlayerJoined(publicClient, fromBlock, currentBlock);
-        await this.checkOperators(publicClient, fromBlock, currentBlock);
+        await this.checkCharacterOperators(publicClient, fromBlock, currentBlock);
+        await this.checkBattleOperators(publicClient, fromBlock, currentBlock);
+        await this.checkZigguratOperators(publicClient, fromBlock, currentBlock);
         
         return currentBlock;
     }
@@ -221,7 +251,7 @@ export class OperatorManager {
       // console.log("Player has not minted, proceeding with mint transaction");
 
       // Create wallet client for sending transactions
-      const account = privateKeyToAccount(this.env.BOT_PRIVATE_KEY as `0x${string}`);
+      const account = privateKeyToAccount(this.env.OPERATOR_PRIVATE_KEY as `0x${string}`);
       const walletClient = createWalletClient({
         account,
         chain: arbitrum,
@@ -258,7 +288,7 @@ export class OperatorManager {
   }
 
   async doWork() {
-    await this.checkMint(this.env.BOT_ADDRESS);
+    await this.checkMint(this.env.OPERATOR_ADDRESS);
     const latestBlock = await this.state.storage.get("latestBlock") as string | undefined;
     const fromBlock = latestBlock ? BigInt(latestBlock) : 0n;
     const currentBlock = await this.checkLogsAndStartBots(fromBlock);

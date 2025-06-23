@@ -11,14 +11,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture Overview
 
-This is a Cloudflare Workers-based gaming bot system for the "Battle" blockchain game. The system uses three Durable Objects to manage game automation:
+This is a Cloudflare Workers-based gaming bot system for the "Battle" blockchain game. The system uses four Durable Objects to manage game automation:
 
 ### Core Components
 
 **OperatorManager** (`src/OperatorManager.ts`) - The main orchestrator that:
 - Monitors blockchain events for new games and player joins
 - Manages bot wallet minting via the Minter contract
-- Spawns CharacterOperator and BattleOperator instances for active games
+- Spawns CharacterOperator, BattleOperator, and ZigguratOperator instances for active games
 - Runs on a 5-second alarm cycle to check for new events
 
 **CharacterOperator** (`src/CharacterOperator.ts`) - Game-playing agent that:
@@ -32,6 +32,11 @@ This is a Cloudflare Workers-based gaming bot system for the "Battle" blockchain
 - Automatically calls `nextTurn()` when turns expire
 - Handles turn timing and game state transitions
 
+**ZigguratOperator** (`src/ZigguratOperator.ts`) - Ziggurat dungeon manager that:
+- Monitors party progress through dungeon rooms
+- Automatically calls `enterDoor()` when parties are ready to advance
+- Manages room completion detection and party state transitions
+
 ### Key Dependencies
 
 - **viem** - Ethereum client for blockchain interactions
@@ -43,6 +48,7 @@ This is a Cloudflare Workers-based gaming bot system for the "Battle" blockchain
 The system interacts with several smart contracts:
 - **Battle** - Main game contract
 - **BattleFactory** - Game creation factory
+- **Ziggurat** - Dungeon exploration contract
 - **BasicDeck** - Card collection contract  
 - **Minter** - Handles card minting for new players
 - **ERC2771Forwarder** - Meta-transaction relayer
@@ -53,7 +59,7 @@ All transactions are forwarded through the ERC2771 pattern for gasless execution
 
 Critical environment variables defined in `src/Env.ts`:
 - RPC endpoints, private keys
-- Durable Object bindings for OPERATOR_MANAGER, CHARACTER_OPERATOR, BATTLE_OPERATOR
+- Durable Object bindings for OPERATOR_MANAGER, CHARACTER_OPERATOR, BATTLE_OPERATOR, ZIGGURAT_OPERATOR
 - Contract addresses are loaded from `src/contracts/deployments.json`
 
 ### Entry Points

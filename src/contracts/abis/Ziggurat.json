@@ -125,6 +125,25 @@
   },
   {
     "type": "function",
+    "name": "createAndStartParty",
+    "inputs": [
+      {
+        "name": "character",
+        "type": "address",
+        "internalType": "contract Character"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "createParty",
     "inputs": [
       {
@@ -358,36 +377,43 @@
     "name": "parties",
     "inputs": [
       {
-        "name": "partyId",
+        "name": "_partyId",
         "type": "uint256",
         "internalType": "uint256"
       }
     ],
     "outputs": [
       {
-        "name": "isPublic",
-        "type": "bool",
-        "internalType": "bool"
-      },
-      {
-        "name": "isStarted",
-        "type": "bool",
-        "internalType": "bool"
-      },
-      {
-        "name": "isEnded",
-        "type": "bool",
-        "internalType": "bool"
-      },
-      {
-        "name": "inviter",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "leader",
-        "type": "address",
-        "internalType": "address"
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct Party",
+        "components": [
+          {
+            "name": "isPublic",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "isStarted",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "isEnded",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "inviter",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "leader",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
       }
     ],
     "stateMutability": "view"
@@ -816,6 +842,22 @@
     "type": "error",
     "name": "RoomNotCompleteError",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RoomNotRevealedError",
+    "inputs": [
+      {
+        "name": "parentRoomHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "parentDoorIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",

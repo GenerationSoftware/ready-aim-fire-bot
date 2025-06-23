@@ -20,6 +20,12 @@
 				"BattleOperator"
 			],
 			"tag": "v2"
+		},
+		{
+			"new_classes": [
+				"ZigguratOperator"
+			],
+			"tag": "v3"
 		}
 	],
 	"durable_objects": {
@@ -35,6 +41,10 @@
 			{ 
 				"class_name": "BattleOperator",
 				"name": "BATTLE_OPERATOR"
+			},
+			{ 
+				"class_name": "ZigguratOperator",
+				"name": "ZIGGURAT_OPERATOR"
 			}
 		]
 	},

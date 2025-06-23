@@ -195,7 +195,7 @@ export class CharacterOperator {
                 });
 
                 // Forward the transaction
-                const account = privateKeyToAccount(this.env.BOT_PRIVATE_KEY as `0x${string}`);
+                const account = privateKeyToAccount(this.env.OPERATOR_PRIVATE_KEY as `0x${string}`);
                 const walletClient = createWalletClient({
                     account,
                     chain: arbitrum,
@@ -262,7 +262,7 @@ export class CharacterOperator {
               args: [BigInt(this.playerId)]
             });
 
-            const account = privateKeyToAccount(this.env.BOT_PRIVATE_KEY as `0x${string}`);
+            const account = privateKeyToAccount(this.env.OPERATOR_PRIVATE_KEY as `0x${string}`);
             const walletClient = createWalletClient({
               account,
               chain: arbitrum,
