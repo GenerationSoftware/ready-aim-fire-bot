@@ -1,25 +1,15 @@
 import { Env } from "./Env";
 import BattleABI from "./contracts/abis/Battle.json";
-import BattleFactoryABI from "./contracts/abis/BattleFactory.json";
 import MinterABI from "./contracts/abis/Minter.json";
-import ZigguratABI from "./contracts/abis/Ziggurat.json";
-import { createPublicClient, createWalletClient, http, encodeFunctionData, PublicClient, Log, type Abi } from "viem";
+import { createPublicClient, createWalletClient, http, encodeFunctionData, type Abi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
 import { forwardTransaction } from "./forwarder/forwardTransaction";
 import { CONTRACT_ADDRESSES } from "./utils/deployments";
-
-// WebSocket interface to match Cloudflare Workers WebSocket API
-interface WebSocketEventHandlers {
-  onopen: (event: Event) => void;
-  onmessage: (event: MessageEvent) => void;
-  onclose: (event: CloseEvent) => void;
-  onerror: (event: Event) => void;
-}
+import { createGraphQLClient, GraphQLQueries, type Battle, type BattlePlayer, type Party } from "./utils/graphql";
 
 export class OperatorManager {
     state: DurableObjectState;
-    websocket: WebSocket & WebSocketEventHandlers | null = null;
     env: Env;
   
     constructor(state: DurableObjectState, env: Env) {
@@ -27,181 +17,114 @@ export class OperatorManager {
       this.env = env;
     }
 
-    private async mapGameState(publicClient: PublicClient, gameAddresses: string[]): Promise<Record<string, number>> {
-      const results: Record<string, number> = {};
 
-      // Process logs in batches of 100
-      const BATCH_SIZE = 100;
-      for (let i = 0; i < gameAddresses.length; i += BATCH_SIZE) {
-        const batch = gameAddresses.slice(i, i + BATCH_SIZE);
-        
-        // Create multicall contracts for this batch
-        const contracts = batch.map(address => ({
-          address: address as `0x${string}`,
-          abi: BattleABI as Abi,
-          functionName: 'getGameState' as const
-        }));
-
-        // Execute multicall
-        const responses = await publicClient.multicall({
-          contracts
-        });
-
-        // Process results
-        for (let j = 0; j < responses.length; j++) {
-          const gameAddress = contracts[j].address;
-          const response = responses[j];
-          if (!response.status) {
-            console.error("Failed to get game state for", gameAddress);
-            continue;
-          }
-          results[gameAddress] = response.result as number;
-        }
-      }
-
-      return results
-    }
-
-    private async checkCharacterOperators(publicClient: PublicClient, fromBlock: bigint, toBlock: bigint) {
-      const playerJoinedEvent = (BattleABI as Abi).find(item => item.type === 'event' && 'name' in item && item.name === 'PlayerJoinedEvent') as any;
-      if (!playerJoinedEvent) {
-        throw new Error('PlayerJoinedEvent not found in ABI');
-      }
-
-      const logs = await publicClient.getLogs({
-        event: playerJoinedEvent,
-        fromBlock: fromBlock,
-        toBlock: toBlock,
-        args: {
-          owner: this.env.OPERATOR_ADDRESS as `0x${string}`
-        }
+    private async checkCharacterOperators() {
+      // Use GraphQL to find battle players where our operator is a character
+      const graphqlClient = createGraphQLClient(this.env);
+      const result = await graphqlClient.query<{characters: {items: Character[]}}>(GraphQLQueries.getMonsters, {
+        owner: this.env.OWNER_ADDRESS.toLowerCase(),
+        operator: this.env.OPERATOR_ADDRESS.toLowerCase()
       });
 
-      console.log("Found games with bots: ", logs.length);
-
-      // Get stored game addresses
-      const storedGames = await this.state.storage.get("gameAddresses") as Set<string> || new Set<string>();
+      console.log("Found monster characters:", result.characters.items.length);
       
-      // Filter logs to only include games in our stored set
-      const filteredLogs = logs.filter(log => storedGames.has(log.address.toLowerCase().toString()));
-
-      console.log("Filtered player joined logs:", filteredLogs.length, "out of", logs.length);
-
-      const gameStates = await this.mapGameState(publicClient, filteredLogs.map(log => log.address));
-
-      for (const log of filteredLogs) {
-        const gameAddress = log.address;
-        const gameState = gameStates[gameAddress];
-        if (gameState <= 2) {
-          console.log("READY TO PLAY");
-          const args = (log as any).args as { owner: `0x${string}`, playerId: bigint, locationX: bigint };
-          const isTeamA = args.locationX === 0n;
-          const id = this.env.CHARACTER_OPERATOR.idFromName(args.playerId.toString());
-          const characterOperator = this.env.CHARACTER_OPERATOR.get(id);
-          characterOperator.fetch(new Request(`http://character-operator/start?gameAddress=${log.address}&playerId=${args.playerId}&teamA=${isTeamA}`));
-        }
+      // Check each battle player
+      for (const battlePlayer of result.characters.items) {
+        const battle = battlePlayer.battle;
+        const operatorKey = `${battle.id}-${battlePlayer.playerId}`;
+        
+        // Start character operator
+        const id = this.env.CHARACTER_OPERATOR.idFromName(battlePlayer.playerId);
+        const characterOperator = this.env.CHARACTER_OPERATOR.get(id);
+        characterOperator.fetch(new Request(`http://character-operator/start?gameAddress=${battle.id}&playerId=${battlePlayer.playerId}&teamA=${battlePlayer.teamA}`));
       }
     }
 
-    private async checkBattleOperators(publicClient: PublicClient, fromBlock: bigint, toBlock: bigint) {
-      const createdGameEvent = (BattleFactoryABI as Abi).find(item => item.type === 'event' && 'name' in item && item.name === 'CreatedGame') as any;
-      if (!createdGameEvent) {
-        throw new Error('CreatedGame not found in ABI');
-      }
-
-      const logs = await publicClient.getLogs({
-        event: createdGameEvent,
-        fromBlock: fromBlock,
-        toBlock: toBlock,
-        address: CONTRACT_ADDRESSES.BATTLE_FACTORY as `0x${string}`,
-        args: {
-          operator: this.env.OPERATOR_ADDRESS as `0x${string}`
-        }
+    private async checkBattleOperators() {
+      // Use GraphQL to find battles where our address is the operator
+      const graphqlClient = createGraphQLClient(this.env);
+      const result = await graphqlClient.query<{battles: {items: Battle[]}}>(GraphQLQueries.getBattlesWithOperator, {
+        operator: this.env.OPERATOR_ADDRESS.toLowerCase()
       });
 
-      const gameAddresses = logs.map(log => {
-        const args = (log as any).args as { gameAddress: `0x${string}` };
-        return args.gameAddress.toLowerCase();
+      // Filter battles by gameState using multicall
+      const publicClient = createPublicClient({
+        chain: arbitrum,
+        transport: http(this.env.ETH_RPC_URL)
       });
 
-      console.log("GAMES CREATED WITH OPERATOR", gameAddresses.length);
-
-      // Get existing game addresses from storage
-      const existingGames = await this.state.storage.get("gameAddresses") as Set<string> || new Set<string>();
+      const battleAddresses = result.battles.items.map(battle => battle.id);
       
-      // Add new game addresses to the set
-      for (const gameAddress of gameAddresses) {
-        existingGames.add(gameAddress.toString());
+      if (battleAddresses.length === 0) {
+        console.log("No battles found with operator");
+        return;
       }
 
-      // Store updated set back in storage
-      await this.state.storage.put("gameAddresses", existingGames);
+      // Create multicall contracts to check game state for all battles
+      const gameStateContracts = battleAddresses.map(address => ({
+        address: address as `0x${string}`,
+        abi: BattleABI as Abi,
+        functionName: 'getGameState' as const
+      }));
 
-      const gameStates = await this.mapGameState(publicClient, gameAddresses);
+      // Execute multicall to get all game states
+      const gameStateResponses = await publicClient.multicall({
+        contracts: gameStateContracts
+      });
 
-      for (const gameAddress of gameAddresses) {
-        const gameState = gameStates[gameAddress];
-        console.log("GAME STATE", gameAddress, gameState);
-        if (gameState <= 2) {
-          console.log("GAME STARTED WITH OPERATOR", gameAddress);
-          const id = this.env.BATTLE_OPERATOR.idFromName(gameAddress.toString());
-          const operator = this.env.BATTLE_OPERATOR.get(id);
-          operator.fetch(new Request(`http://operator/start?gameAddress=${gameAddress}`));
+      // Filter battles where gameState == 2 (active games)
+      const activeBattles = result.battles.items.filter((battle, index) => {
+        const response = gameStateResponses[index];
+        if (response.status === 'failure') {
+          console.error(`Failed to get game state for battle ${battle.id}`);
+          return false;
         }
+        const gameState = response.result as bigint;
+        return gameState === 2n;
+      });
+
+      console.log("Found %s total battles, %s active (gameState=2):", result.battles.items.length, activeBattles.length);
+      
+      for (const battle of activeBattles) {
+        const battleAddress = battle.id.toLowerCase();
+        const id = this.env.BATTLE_OPERATOR.idFromName(battleAddress);
+        const operator = this.env.BATTLE_OPERATOR.get(id);
+        operator.fetch(new Request(`http://operator/start?gameAddress=${battleAddress}`));
       }
     }
 
-    private async checkZigguratOperators(publicClient: PublicClient, fromBlock: bigint, toBlock: bigint) {
-      const partyStartedEvent = (ZigguratABI as Abi).find(item => item.type === 'event' && 'name' in item && item.name === 'PartyStartedEvent') as any;
-      if (!partyStartedEvent) {
-        throw new Error('PartyStartedEvent not found in ABI');
-      }
-
-      const logs = await publicClient.getLogs({
-        event: partyStartedEvent,
-        fromBlock: fromBlock,
-        toBlock: toBlock,
-        address: CONTRACT_ADDRESSES.ZIGGURAT as `0x${string}`
+    private async checkZigguratOperators() {
+      // Use GraphQL to find parties where our operator is the character
+      const graphqlClient = createGraphQLClient(this.env);
+      const result = await graphqlClient.query<{ziggurats: {items: Ziggurat[]}}>(GraphQLQueries.getAllOpenZigguratsWithOperator, {
+        operator: this.env.OPERATOR_ADDRESS.toLowerCase()
       });
 
-      console.log("ZIGGURAT PARTIES STARTED", logs.length);
-
-      for (const log of logs) {
-        const args = (log as any).args as { partyId: bigint };
-        const partyId = args.partyId.toString();
-        
-        console.log("PARTY STARTED", partyId, "on Ziggurat", log.address);
-        
-        // Start a ZigguratOperator for this Ziggurat instance
-        const id = this.env.ZIGGURAT_OPERATOR.idFromName(log.address.toString());
+      console.log("Found %s open ziggurats:", result.ziggurats.items.length);
+      
+      for (const zig of result.ziggurats.items) {
+        const zigAddress = zig.address.toLowerCase();
+        const id = this.env.ZIGGURAT_OPERATOR.idFromName(zigAddress);
         const zigguratOperator = this.env.ZIGGURAT_OPERATOR.get(id);
-        zigguratOperator.fetch(new Request(`http://ziggurat-operator/start?zigguratAddress=${log.address}`));
+        zigguratOperator.fetch(new Request(`http://ziggurat-operator/start?zigguratAddress=${zigAddress}`));
       }
     }
 
-    private async checkLogsAndStartBots(fromBlock: bigint): Promise<bigint> {
-        // Create a public client for reading contract state
-        const publicClient = createPublicClient({
-          chain: arbitrum,
-          transport: http(this.env.ETH_RPC_URL)
-        });
-
-        // Get logs from the specified block
-        const currentBlock = await publicClient.getBlockNumber();
-
-        await this.checkCharacterOperators(publicClient, fromBlock, currentBlock);
-        await this.checkBattleOperators(publicClient, fromBlock, currentBlock);
-        await this.checkZigguratOperators(publicClient, fromBlock, currentBlock);
-        
-        return currentBlock;
+    private async checkAndStartBots(): Promise<void> {
+        // Use GraphQL to discover and start operators
+        await this.checkCharacterOperators();
+        await this.checkBattleOperators();
+        await this.checkZigguratOperators();
     }
   
     async fetch(request: Request): Promise<Response> {
       const url = new URL(request.url);
   
       if (url.pathname === "/start") {
+        await this.state.storage.deleteAlarm();
+        await this.state.storage.deleteAll();
         try {
-          await this.doWork();
+          await this.checkAndStartBots();
         } catch (error: unknown) {
           console.error("Error in /start:", error);
           const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
@@ -219,89 +142,13 @@ export class OperatorManager {
       return new Response("Not found", { status: 404 });
     }
 
-  private async checkMint(address: string): Promise<boolean> {
+  async alarm() {
+    console.log("OperatorManager waking up...");
     try {
-      // Create public client for reading contract state
-      const publicClient = createPublicClient({
-        chain: arbitrum,
-        transport: http(this.env.ETH_RPC_URL)
-      });
-
-      // console.log("Checking mint status for address:", address);
-      // console.log("Using Minter contract at:", this.env.MINTER_ADDRESS);
-
-      // Check if player has already minted
-      const hasMinted = await publicClient.readContract({
-        address: CONTRACT_ADDRESSES.MINTER as `0x${string}`,
-        abi: MinterABI as Abi,
-        functionName: 'playerMinted',
-        args: [address as `0x${string}`]
-      }).catch(error => {
-        console.error("Error reading playerMinted:", error);
-        throw error;
-      });
-
-      // console.log("Mint status:", hasMinted);
-
-      if (hasMinted) {
-        // console.log("Player has already minted");
-        return true;
-      }
-
-      // console.log("Player has not minted, proceeding with mint transaction");
-
-      // Create wallet client for sending transactions
-      const account = privateKeyToAccount(this.env.OPERATOR_PRIVATE_KEY as `0x${string}`);
-      const walletClient = createWalletClient({
-        account,
-        chain: arbitrum,
-        transport: http(this.env.ETH_RPC_URL)
-      });
-
-      // Encode the mintCollection function call
-      const data = encodeFunctionData({
-        abi: MinterABI as Abi,
-        functionName: 'mintCollection',
-        args: [address as `0x${string}`]
-      });
-
-      // console.log("Encoded mintCollection data:", data);
-
-      // Forward the transaction using the forwarder
-      const hash = await forwardTransaction(
-        {
-          to: CONTRACT_ADDRESSES.MINTER as `0x${string}`,
-          data: data,
-          rpcUrl: this.env.ETH_RPC_URL,
-          relayerUrl: this.env.RELAYER_URL
-        },
-        walletClient,
-        this.env.ERC2771_FORWARDER_ADDRESS as `0x${string}`
-      );
-
-      // console.log("Mint transaction forwarded:", hash);
-      return false;
+      await this.checkAndStartBots();
     } catch (error) {
-      console.error("Error in checkMint:", error);
-      throw error;
+      console.error("Error in alarm:", error);
     }
+    await this.state.storage.setAlarm(Date.now() + 5000);
   }
-
-  async doWork() {
-    await this.checkMint(this.env.OPERATOR_ADDRESS);
-    const latestBlock = await this.state.storage.get("latestBlock") as string | undefined;
-    const fromBlock = latestBlock ? BigInt(latestBlock) : 0n;
-    const currentBlock = await this.checkLogsAndStartBots(fromBlock);
-    await this.state.storage.put("latestBlock", currentBlock.toString());
-  }
-
-    async alarm() {
-      console.log("OperatorManager waking up...");
-      try {
-        await this.doWork();
-      } catch (error) {
-        console.error("Error in alarm:", error);
-      }
-      await this.state.storage.setAlarm(Date.now() + 5000);
-    }
-  }
+}

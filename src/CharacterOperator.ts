@@ -7,6 +7,7 @@ import BasicDeckABI from "./contracts/abis/BasicDeck.json";
 import { encodeFunctionData, encodePacked, type Abi } from "viem";
 import { forwardTransaction } from "./forwarder/forwardTransaction";
 import { CONTRACT_ADDRESSES } from "./utils/deployments";
+import { createGraphQLClient, GraphQLQueries, type BattlePlayer } from "./utils/graphql";
 
 interface Player {
   address: string;
@@ -28,32 +29,49 @@ export class CharacterOperator {
   }
 
   private async getGamePlayers(gameAddress: string): Promise<Player[]> {
-    const publicClient = createPublicClient({
-      chain: arbitrum,
-      transport: http(this.env.ETH_RPC_URL)
-    });
+    try {
+      // Use GraphQL to get battle players instead of scanning events
+      const graphqlClient = createGraphQLClient(this.env);
+      const result = await graphqlClient.query<{battlePlayers: {items: BattlePlayer[]}}>(GraphQLQueries.getBattlePlayers, {
+        battleId: gameAddress.toLowerCase()
+      });
 
-    const playerJoinedEvent = (BattleABI as Abi).find(item => item.type === 'event' && 'name' in item && item.name === 'PlayerJoinedEvent') as any;
-    if (!playerJoinedEvent) {
-      throw new Error('PlayerJoinedEvent not found in ABI');
+      return result.battlePlayers.items.map(player => ({
+        address: player.character, // In GraphQL this is the character contract address
+        playerId: player.playerId,
+        teamA: player.teamA
+      }));
+    } catch (error) {
+      console.error("Error getting players from GraphQL, falling back to events:", error);
+      
+      // Fallback to original event-based approach
+      const publicClient = createPublicClient({
+        chain: arbitrum,
+        transport: http(this.env.ETH_RPC_URL)
+      });
+
+      const playerJoinedEvent = (BattleABI as Abi).find(item => item.type === 'event' && 'name' in item && item.name === 'PlayerJoinedEvent') as any;
+      if (!playerJoinedEvent) {
+        throw new Error('PlayerJoinedEvent not found in ABI');
+      }
+
+      const currentBlock = await publicClient.getBlockNumber();
+      const logs = await publicClient.getLogs({
+        event: playerJoinedEvent,
+        address: gameAddress as `0x${string}`,
+        fromBlock: 0n,
+        toBlock: currentBlock
+      });
+
+      return logs.map(log => {
+        const args = (log as any).args as { owner: `0x${string}`, playerId: bigint, locationX: bigint };
+        return {
+          address: args.owner,
+          playerId: args.playerId.toString(),
+          teamA: args.locationX === 0n
+        };
+      });
     }
-
-    const currentBlock = await publicClient.getBlockNumber();
-    const logs = await publicClient.getLogs({
-      event: playerJoinedEvent,
-      address: gameAddress as `0x${string}`,
-      fromBlock: 0n,
-      toBlock: currentBlock
-    });
-
-    return logs.map(log => {
-      const args = (log as any).args as { owner: `0x${string}`, playerId: bigint, locationX: bigint };
-      return {
-        address: args.owner,
-        playerId: args.playerId.toString(),
-        teamA: args.locationX === 0n
-      };
-    });
   }
 
   private async executeBotLogic() {
@@ -100,12 +118,34 @@ export class CharacterOperator {
         transport: http(this.env.ETH_RPC_URL)
       });
 
-      // Check if game has started
-      const gameState = await publicClient.readContract({
-        address: this.gameAddress as `0x${string}`,
-        abi: BattleABI as Abi,
-        functionName: 'getGameState'
-      }) as bigint;
+      // Check game state - try GraphQL first for efficiency
+      let gameState: bigint;
+      try {
+        const graphqlClient = createGraphQLClient(this.env);
+        const battleResult = await graphqlClient.query<{battles: {items: any[]}}>(GraphQLQueries.getBattlesByGameState);
+        
+        const battle = battleResult.battles.items.find(b => b.id.toLowerCase() === this.gameAddress!.toLowerCase());
+        
+        if (battle && battle.gameStartedAt) {
+          gameState = 2n; // Game is started
+          characterLog('Game state from GraphQL: started');
+        } else {
+          // Fall back to contract call
+          gameState = await publicClient.readContract({
+            address: this.gameAddress as `0x${string}`,
+            abi: BattleABI as Abi,
+            functionName: 'getGameState'
+          }) as bigint;
+          characterLog('Game state from contract:', gameState);
+        }
+      } catch (error) {
+        characterError('Error getting game state from GraphQL, falling back to contract:', error);
+        gameState = await publicClient.readContract({
+          address: this.gameAddress as `0x${string}`,
+          abi: BattleABI as Abi,
+          functionName: 'getGameState'
+        }) as bigint;
+      }
 
       characterLog('executeBotLogic', { gameAddress: this.gameAddress, gameState });
 
@@ -310,9 +350,13 @@ export class CharacterOperator {
     const url = new URL(request.url);
 
     if (url.pathname === "/start") {
+      // Check if operator is already running by looking for stored data
+      const requestedGameAddress = url.searchParams.get("gameAddress");
+      const requestedPlayerId = url.searchParams.get("playerId");
+      
       // Store game address and player ID
-      this.gameAddress = url.searchParams.get("gameAddress");
-      this.playerId = url.searchParams.get("playerId");
+      this.gameAddress = requestedGameAddress;
+      this.playerId = requestedPlayerId;
       this.teamA = url.searchParams.get("teamA") === "true";
 
       if (!this.gameAddress || !this.playerId || this.teamA === null) {

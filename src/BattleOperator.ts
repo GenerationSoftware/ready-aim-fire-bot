@@ -5,6 +5,7 @@ import { createPublicClient, createWalletClient, http, encodeFunctionData, encod
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
 import { forwardTransaction } from "./forwarder/forwardTransaction";
+import { createGraphQLClient, GraphQLQueries, type Battle, type BattleTurn } from "./utils/graphql";
 
 // WebSocket interface to match Cloudflare Workers WebSocket API
 interface WebSocketEventHandlers {
@@ -50,44 +51,81 @@ export class BattleOperator {
     });
 
     try {
-      // Check if turn has ended and game state using multicall
-      const [isTurnOver, gameState] = await publicClient.multicall({
-        contracts: [
-          {
-            address: this.gameAddress as `0x${string}`,
-            abi: BattleABI as Abi,
-            functionName: 'isTurnOver'
-          },
-          {
-            address: this.gameAddress as `0x${string}`,
-            abi: BattleABI as Abi,
-            functionName: 'getGameState'
-          }
-        ]
-      });
-
-      if (isTurnOver.status === 'failure' || gameState.status === 'failure') {
-        console.error("Failed to get game state:", { isTurnOver, gameState });
-        await this.state.storage.setAlarm(Date.now() + 1000);
-        return false;
+      // Use GraphQL to get battle state and recent turn data
+      const graphqlClient = createGraphQLClient(this.env);
+      
+      // Get battle data from GraphQL
+      const battleResult = await graphqlClient.query<{battles: {items: Battle[]}}>(GraphQLQueries.getBattlesByGameState);
+      
+      const battle = battleResult.battles.items.find(b => b.id.toLowerCase() === this.gameAddress!.toLowerCase());
+      
+      if (!battle) {
+        this.opLog("Battle not found in GraphQL, checking contract state");
+        // Fallback to contract check
+        const gameState = await publicClient.readContract({
+          address: this.gameAddress as `0x${string}`,
+          abi: BattleABI as Abi,
+          functionName: 'getGameState'
+        }) as bigint;
+        
+        if (gameState > 2n) {
+          this.opLog("Game has ended, stopping operator");
+          return false;
+        } else if (gameState == 1n) {
+          this.opLog("Game has not started, delaying");
+          await this.state.storage.setAlarm(Date.now() + 5000);
+          return true;
+        }
+      } else if (!battle.gameStartedAt) {
+        this.opLog("Game has not started according to GraphQL, delaying");
+        await this.state.storage.setAlarm(Date.now() + 5000);
+        return true;
       }
 
+      // Check if turn has ended using contract call (real-time data)
+      const isTurnOver = await publicClient.readContract({
+        address: this.gameAddress as `0x${string}`,
+        abi: BattleABI as Abi,
+        functionName: 'isTurnOver'
+      }) as boolean;
+
+      const gameState = await publicClient.readContract({
+        address: this.gameAddress as `0x${string}`,
+        abi: BattleABI as Abi,
+        functionName: 'getGameState'
+      }) as bigint;
+
       // Only proceed if game is still active (state <= 2)
-      if ((gameState.result as bigint) > 2n) {
+      if (gameState > 2n) {
         this.opLog("Game has ended, stopping operator");
         return false;
       }
 
-      if ((gameState.result as bigint) == 1n) {
+      if (gameState == 1n) {
         this.opLog("Game has not started, delaying");
         await this.state.storage.setAlarm(Date.now() + 5000);
         return true;
       }
 
-      console.log("GAME STATATETETET", gameState.result);
+      this.opLog("Game state:", gameState, "Turn over:", isTurnOver);
 
-      if ((gameState.result as bigint) == 2n && isTurnOver.result) {
+      if (gameState == 2n && isTurnOver) {
         this.opLog("Turn has ended, advancing to next turn");
+        
+        // Get the latest turn information from GraphQL for context
+        const turnsResult = await graphqlClient.query<{battleTurns: {items: BattleTurn[]}}>(GraphQLQueries.getBattleTurns, {
+          battleId: this.gameAddress.toLowerCase()
+        });
+        
+        if (turnsResult.battleTurns.items.length > 0) {
+          const latestTurn = turnsResult.battleTurns.items[0];
+          this.opLog("Latest turn from GraphQL:", {
+            turn: latestTurn.turn,
+            startedAt: latestTurn.startedAt,
+            duration: latestTurn.duration,
+            endTurnCount: latestTurn.endTurnCount
+          });
+        }
         
         // Create wallet client for sending transactions
         const account = privateKeyToAccount(this.env.OPERATOR_PRIVATE_KEY as `0x${string}`);
@@ -253,13 +291,13 @@ export class BattleOperator {
     const url = new URL(request.url);
 
     if (url.pathname === "/start") {
-      this.gameAddress = url.searchParams.get("gameAddress");
+      // Check if operator is already running by looking for stored game address
+      const requestedGameAddress = url.searchParams.get("gameAddress");
+
+      this.gameAddress = requestedGameAddress;
       if (!this.gameAddress) {
         return new Response("Missing gameAddress", { status: 400 });
       }
-
-      // Store game address
-      await this.state.storage.put("gameAddress", this.gameAddress);
 
       // Connect to WebSocket
       try {

@@ -6,6 +6,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
 import { forwardTransaction } from "./forwarder/forwardTransaction";
 import { CONTRACT_ADDRESSES } from "./utils/deployments";
+import { createGraphQLClient, GraphQLQueries, type Party, type ZigguratRoom } from "./utils/graphql";
 
 export class ZigguratOperator {
   private state: DurableObjectState;
@@ -42,18 +43,19 @@ export class ZigguratOperator {
     });
 
     try {
-      // Get the current party count
-      const partyCount = await publicClient.readContract({
-        address: this.zigguratAddress as `0x${string}`,
-        abi: ZigguratABI as Abi,
-        functionName: 'partyCount'
-      }) as bigint;
+      // Use GraphQL to get active parties for this ziggurat
+      const graphqlClient = createGraphQLClient(this.env);
+      const result = await graphqlClient.query<{partys: {items: Party[]}}>(GraphQLQueries.getPartiesByZiggurat, {
+        zigguratAddress: this.zigguratAddress.toLowerCase()
+      });
 
-      this.zigLog("Current party count:", partyCount);
+      const activeParties = result.partys.items.filter(party => party.isStarted && !party.isEnded);
+      
+      this.zigLog("Active parties from GraphQL:", activeParties.length);
 
       // Check each active party to see if they need operator intervention
-      for (let i = 1n; i <= partyCount; i++) {
-        await this.checkParty(i, publicClient);
+      for (const party of activeParties) {
+        await this.checkParty(BigInt(party.partyId), publicClient, party);
       }
 
       return true;
@@ -65,9 +67,9 @@ export class ZigguratOperator {
     }
   }
 
-  private async checkParty(partyId: bigint, publicClient: any): Promise<void> {
+  private async checkParty(partyId: bigint, publicClient: any, partyGraphQLData?: Party): Promise<void> {
     try {
-      // Get party information
+      // Get real-time party location data from contract (this changes frequently)
       const [party, location] = await publicClient.multicall({
         contracts: [
           {
@@ -93,8 +95,12 @@ export class ZigguratOperator {
       const partyData = party.result as any;
       const locationData = location.result as any;
 
-      // Skip if party hasn't started or has ended
-      if (!partyData.isStarted || partyData.isEnded) {
+      // Skip if party hasn't started or has ended (use GraphQL data if available for performance)
+      if (partyGraphQLData) {
+        if (!partyGraphQLData.isStarted || partyGraphQLData.isEnded) {
+          return;
+        }
+      } else if (!partyData.isStarted || partyData.isEnded) {
         return;
       }
 
@@ -109,15 +115,26 @@ export class ZigguratOperator {
       }) as boolean;
 
       if (isRoomCompleted && locationData.isNextDoorChosen) {
-        // Check if the chosen room has been revealed
-        const chosenRoomHash = await publicClient.readContract({
+        // Use GraphQL to check if room has been revealed instead of contract call
+        const graphqlClient = createGraphQLClient(this.env);
+        const roomsResult = await graphqlClient.query<{zigguratRooms: {items: ZigguratRoom[]}}>(GraphQLQueries.getZigguratRooms, {
+          zigguratAddress: this.zigguratAddress.toLowerCase()
+        });
+
+        // Find if the chosen room hash exists and is revealed
+        const targetRoomHash = await publicClient.readContract({
           address: this.zigguratAddress as `0x${string}`,
           abi: ZigguratABI as Abi,
           functionName: 'childRoomHashes',
           args: [locationData.parentRoomHash, locationData.chosenDoorIndex]
         }) as string;
 
-        if (chosenRoomHash === '0x0000000000000000000000000000000000000000000000000000000000000000') {
+        const existingRoom = roomsResult.zigguratRooms.items.find(room => 
+          room.parentRoomHash === locationData.parentRoomHash && 
+          room.parentDoorIndex === locationData.chosenDoorIndex.toString()
+        );
+
+        if (!existingRoom || existingRoom.revealedAt === null) {
           // Room hasn't been revealed yet, reveal it first
           this.zigLog(`Party ${partyId} chose unrevealed room, revealing door ${locationData.chosenDoorIndex}`);
           const revealSuccess = await this.executeRevealDoor(locationData.parentRoomHash, locationData.chosenDoorIndex);
@@ -293,12 +310,16 @@ export class ZigguratOperator {
     const url = new URL(request.url);
 
     if (url.pathname === "/start") {
-      this.zigguratAddress = url.searchParams.get("zigguratAddress");
+      console.log("STARTING ZIGGURAT OPERATOR");
+      
+      // Check if operator is already running by looking for stored ziggurat address
+      const requestedZigguratAddress = url.searchParams.get("zigguratAddress");
+
+      this.zigguratAddress = requestedZigguratAddress;
       if (!this.zigguratAddress) {
         return new Response("Missing zigguratAddress", { status: 400 });
       }
 
-      // Store ziggurat address
       await this.state.storage.put("zigguratAddress", this.zigguratAddress);
 
       // Start checking party progress
