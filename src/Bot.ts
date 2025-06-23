@@ -2,10 +2,11 @@ import { Env } from "./Env";
 import { createPublicClient, http, createWalletClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
-import ReadyAimFireABI from "./abis/ReadyAimFire.json";
-import BasicDeckABI from "./abis/BasicDeck.json";
+import BattleABI from "./contracts/abis/Battle.json";
+import BasicDeckABI from "./contracts/abis/BasicDeck.json";
 import { encodeFunctionData, encodePacked } from "viem";
 import { forwardTransaction } from "./forwarder/forwardTransaction";
+import { CONTRACT_ADDRESSES } from "./utils/deployments";
 
 interface Player {
   address: string;
@@ -32,7 +33,7 @@ export class Bot {
       transport: http(this.env.ETH_RPC_URL)
     });
 
-    const playerJoinedEvent = ReadyAimFireABI.find(item => item.type === 'event' && item.name === 'PlayerJoinedEvent');
+    const playerJoinedEvent = BattleABI.find(item => item.type === 'event' && item.name === 'PlayerJoinedEvent');
     if (!playerJoinedEvent) {
       throw new Error('PlayerJoinedEvent not found in ABI');
     }
@@ -102,7 +103,7 @@ export class Bot {
       // Check if game has started
       const gameState = await publicClient.readContract({
         address: this.gameAddress as `0x${string}`,
-        abi: ReadyAimFireABI,
+        abi: BattleABI,
         functionName: 'getGameState'
       });
 
@@ -112,7 +113,7 @@ export class Bot {
         // Check if it's our team's turn
         const isTeamATurn = await publicClient.readContract({
           address: this.gameAddress as `0x${string}`,
-          abi: ReadyAimFireABI,
+          abi: BattleABI,
           functionName: 'isTeamATurn'
         });
 
@@ -122,7 +123,7 @@ export class Bot {
           // Get our player stats to check energy
           const playerStats = await publicClient.readContract({
             address: this.gameAddress as `0x${string}`,
-            abi: ReadyAimFireABI,
+            abi: BattleABI,
             functionName: 'getPlayerStatsArray',
             args: [BigInt(this.playerId)]
           });
@@ -133,14 +134,14 @@ export class Bot {
           // Get our cards
           const playerCards = await publicClient.readContract({
             address: this.gameAddress as `0x${string}`,
-            abi: ReadyAimFireABI,
+            abi: BattleABI,
             functionName: 'playerCards',
             args: [BigInt(this.playerId)]
           });
 
           // Use multicall to get action types for all cards
           const actionTypeCalls = playerCards.map(card => ({
-            address: this.env.BASIC_DECK_ADDRESS as `0x${string}`,
+            address: CONTRACT_ADDRESSES.BASIC_DECK as `0x${string}`,
             abi: BasicDeckABI,
             functionName: 'tokenActionType',
             args: [BigInt(card.tokenId)]
@@ -188,7 +189,7 @@ export class Bot {
                 );
 
                 const encodedData = encodeFunctionData({
-                  abi: ReadyAimFireABI,
+                  abi: BattleABI,
                   functionName: 'action',
                   args: [BigInt(this.playerId), BigInt(cardIndex), actionParams]
                 });
@@ -220,7 +221,7 @@ export class Bot {
                 // Update energy after action
                 const updatedStats = await publicClient.readContract({
                   address: this.gameAddress as `0x${string}`,
-                  abi: ReadyAimFireABI,
+                  abi: BattleABI,
                   functionName: 'getPlayerStatsArray',
                   args: [BigInt(this.playerId)]
                 });
@@ -242,13 +243,13 @@ export class Bot {
           // end turn
           const currentTurn = await publicClient.readContract({
             address: this.gameAddress as `0x${string}`,
-            abi: ReadyAimFireABI,
+            abi: BattleABI,
             functionName: 'currentTurn'
           });
 
           const hasEndedTurn = await publicClient.readContract({
             address: this.gameAddress as `0x${string}`,
-            abi: ReadyAimFireABI,
+            abi: BattleABI,
             functionName: 'playerEndedTurn',
             args: [BigInt(this.playerId), currentTurn]
           });
@@ -256,7 +257,7 @@ export class Bot {
           if (!hasEndedTurn) {
             botLog('Ending turn');
             const encodedData = encodeFunctionData({
-              abi: ReadyAimFireABI,
+              abi: BattleABI,
               functionName: 'endTurn'
             });
 

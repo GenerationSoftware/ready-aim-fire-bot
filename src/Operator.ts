@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { Env } from "./Env";
-import ReadyAimFireABI from "./abis/ReadyAimFire.json";
+import BattleABI from "./contracts/abis/Battle.json";
 import { createPublicClient, createWalletClient, http, encodeFunctionData, encodeEventTopics } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
@@ -55,12 +55,12 @@ export class Operator {
         contracts: [
           {
             address: this.gameAddress as `0x${string}`,
-            abi: ReadyAimFireABI,
+            abi: BattleABI,
             functionName: 'isTurnOver'
           },
           {
             address: this.gameAddress as `0x${string}`,
-            abi: ReadyAimFireABI,
+            abi: BattleABI,
             functionName: 'getGameState'
           }
         ]
@@ -99,7 +99,7 @@ export class Operator {
 
         // Encode the nextTurn function call
         const data = encodeFunctionData({
-          abi: ReadyAimFireABI,
+          abi: BattleABI,
           functionName: 'nextTurn'
         });
 
@@ -150,7 +150,7 @@ export class Operator {
         // Get the new turn end time
         const currentTurnEndsAt = await publicClient.readContract({
           address: this.gameAddress as `0x${string}`,
-          abi: ReadyAimFireABI,
+          abi: BattleABI,
           functionName: 'currentTurnEndsAt'
         });
 
@@ -186,7 +186,7 @@ export class Operator {
 
       const subscribeToEvent = (eventName: string) => {
         // Get the EndedTurnEvent from the ABI
-        const endedTurnEvent = ReadyAimFireABI.find(
+        const endedTurnEvent = BattleABI.find(
           (item) => item.type === "event" && item.name === eventName
         );
 

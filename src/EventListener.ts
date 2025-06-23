@@ -1,11 +1,12 @@
 import { Env } from "./Env";
-import ReadyAimFireABI from "./abis/ReadyAimFire.json";
-import ReadyAimFireFactoryABI from "./abis/ReadyAimFireFactory.json";
-import MinterABI from "./abis/Minter.json";
+import BattleABI from "./contracts/abis/Battle.json";
+import BattleFactoryABI from "./contracts/abis/BattleFactory.json";
+import MinterABI from "./contracts/abis/Minter.json";
 import { createPublicClient, createWalletClient, http, encodeFunctionData, PublicClient, Log } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
 import { forwardTransaction } from "./forwarder/forwardTransaction";
+import { CONTRACT_ADDRESSES } from "./utils/deployments";
 
 // WebSocket interface to match Cloudflare Workers WebSocket API
 interface WebSocketEventHandlers {
@@ -36,7 +37,7 @@ export class EventListener {
         // Create multicall contracts for this batch
         const contracts = batch.map(address => ({
           address: address as `0x${string}`,
-          abi: ReadyAimFireABI,
+          abi: BattleABI,
           functionName: 'getGameState' as const
         }));
 
@@ -61,7 +62,7 @@ export class EventListener {
     }
 
     private async checkPlayerJoined(publicClient: PublicClient, fromBlock: bigint, toBlock: bigint) {
-      const playerJoinedEvent = ReadyAimFireABI.find(item => item.type === 'event' && item.name === 'PlayerJoinedEvent');
+      const playerJoinedEvent = BattleABI.find(item => item.type === 'event' && item.name === 'PlayerJoinedEvent');
       if (!playerJoinedEvent) {
         throw new Error('PlayerJoinedEvent not found in ABI');
       }
@@ -102,7 +103,7 @@ export class EventListener {
     }
 
     private async checkOperators(publicClient: PublicClient, fromBlock: bigint, toBlock: bigint) {
-      const createdGameEvent = ReadyAimFireFactoryABI.find(item => item.type === 'event' && item.name === 'CreatedGame');
+      const createdGameEvent = BattleFactoryABI.find(item => item.type === 'event' && item.name === 'CreatedGame');
       if (!createdGameEvent) {
         throw new Error('CreatedGame not found in ABI');
       }
@@ -111,7 +112,7 @@ export class EventListener {
         event: createdGameEvent,
         fromBlock: fromBlock,
         toBlock: toBlock,
-        address: this.env.FACTORY_ADDRESS as `0x${string}`,
+        address: CONTRACT_ADDRESSES.BATTLE_FACTORY as `0x${string}`,
         args: {
           operator: this.env.OPERATOR_ADDRESS as `0x${string}`
         }
@@ -201,7 +202,7 @@ export class EventListener {
 
       // Check if player has already minted
       const hasMinted = await publicClient.readContract({
-        address: this.env.MINTER_ADDRESS as `0x${string}`,
+        address: CONTRACT_ADDRESSES.MINTER as `0x${string}`,
         abi: MinterABI,
         functionName: 'playerMinted',
         args: [address as `0x${string}`]
