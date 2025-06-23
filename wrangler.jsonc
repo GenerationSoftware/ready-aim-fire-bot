@@ -10,14 +10,14 @@
 	"migrations": [
 		{
 			"new_classes": [
-				"EventListener",
-				"Bot"
+				"OperatorManager",
+				"CharacterOperator"
 			],
 			"tag": "v1"
 		},
 		{
 			"new_classes": [
-				"Operator"
+				"BattleOperator"
 			],
 			"tag": "v2"
 		}
@@ -25,16 +25,16 @@
 	"durable_objects": {
 		"bindings": [
 			{
-				"class_name": "EventListener",
-				"name": "EVENT_LISTENER"
+				"class_name": "OperatorManager",
+				"name": "OPERATOR_MANAGER"
 			},
 			{
-				"class_name": "Bot",
-				"name": "BOT"
+				"class_name": "CharacterOperator",
+				"name": "CHARACTER_OPERATOR"
 			},
 			{ 
-				"class_name": "Operator",
-				"name": "OPERATOR"
+				"class_name": "BattleOperator",
+				"name": "BATTLE_OPERATOR"
 			}
 		]
 	},

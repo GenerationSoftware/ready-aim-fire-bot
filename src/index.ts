@@ -1,7 +1,7 @@
 import { Env } from "./Env";
-import { EventListener } from "./EventListener";
-import { Bot } from "./Bot";
-import { Operator } from "./Operator";
+import { OperatorManager } from "./OperatorManager";
+import { CharacterOperator } from "./CharacterOperator";
+import { BattleOperator } from "./BattleOperator";
 
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -9,7 +9,7 @@ export default {
 	},
 };
 
-export { EventListener, Bot, Operator };
+export { OperatorManager, CharacterOperator, BattleOperator };
 
 async function handleRequest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 	const url = new URL(request.url);
@@ -17,13 +17,13 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
 	console.log("Index Fetching", url.pathname);
 
 	if (url.pathname === "/start") {
-		const id = env.EVENT_LISTENER.idFromName("event-listener");
-		const eventListener = env.EVENT_LISTENER.get(id);
-		return eventListener.fetch(request);
+		const id = env.OPERATOR_MANAGER.idFromName("operator-manager");
+		const operatorManager = env.OPERATOR_MANAGER.get(id);
+		return operatorManager.fetch(request);
 	} else if (url.pathname === "/reset") {
-		const id = env.EVENT_LISTENER.idFromName("event-listener");
-		const eventListener = env.EVENT_LISTENER.get(id);
-		return eventListener.fetch(request);
+		const id = env.OPERATOR_MANAGER.idFromName("operator-manager");
+		const operatorManager = env.OPERATOR_MANAGER.get(id);
+		return operatorManager.fetch(request);
 	}
 
 	return new Response("Not found", { status: 404 });

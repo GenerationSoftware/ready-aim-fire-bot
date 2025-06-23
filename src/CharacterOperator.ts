@@ -4,7 +4,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
 import BattleABI from "./contracts/abis/Battle.json";
 import BasicDeckABI from "./contracts/abis/BasicDeck.json";
-import { encodeFunctionData, encodePacked } from "viem";
+import { encodeFunctionData, encodePacked, type Abi } from "viem";
 import { forwardTransaction } from "./forwarder/forwardTransaction";
 import { CONTRACT_ADDRESSES } from "./utils/deployments";
 
@@ -15,7 +15,7 @@ interface Player {
 }
 
 
-export class Bot {
+export class CharacterOperator {
   private state: DurableObjectState;
   private env: Env;
   private gameAddress: string | null = null;
@@ -33,7 +33,7 @@ export class Bot {
       transport: http(this.env.ETH_RPC_URL)
     });
 
-    const playerJoinedEvent = BattleABI.find(item => item.type === 'event' && item.name === 'PlayerJoinedEvent');
+    const playerJoinedEvent = (BattleABI as Abi).find(item => item.type === 'event' && 'name' in item && item.name === 'PlayerJoinedEvent') as any;
     if (!playerJoinedEvent) {
       throw new Error('PlayerJoinedEvent not found in ABI');
     }
@@ -47,7 +47,7 @@ export class Bot {
     });
 
     return logs.map(log => {
-      const args = log.args as { owner: `0x${string}`, playerId: bigint, locationX: bigint };
+      const args = (log as any).args as { owner: `0x${string}`, playerId: bigint, locationX: bigint };
       return {
         address: args.owner,
         playerId: args.playerId.toString(),
@@ -69,7 +69,7 @@ export class Bot {
       this.playerId = storedPlayerId;
       this.teamA = storedTeamA;
 
-      const botLog = (message: string, ...args: any[]) => {
+      const characterLog = (message: string, ...args: any[]) => {
         // console.log({
         //   origin: "BOT",
         //   gameAddress: this.gameAddress,
@@ -79,9 +79,9 @@ export class Bot {
         // });
       };
 
-      const botError = (message: string, ...args: any[]) => {
+      const characterError = (message: string, ...args: any[]) => {
         console.error({
-          origin: "BOT",
+          origin: "CHARACTER_OPERATOR",
           gameAddress: this.gameAddress,
           playerId: this.playerId,
           message,
@@ -89,9 +89,9 @@ export class Bot {
         });
       };
 
-      botLog(`executeBotLogic`, { gameAddress: this.gameAddress, playerId: this.playerId, teamA: this.teamA});
+      characterLog(`executeBotLogic`, { gameAddress: this.gameAddress, playerId: this.playerId, teamA: this.teamA});
       if (players) {
-        botLog('Players', players);
+        characterLog('Players', players);
       }
 
       // Create public client for game state checks
@@ -103,46 +103,46 @@ export class Bot {
       // Check if game has started
       const gameState = await publicClient.readContract({
         address: this.gameAddress as `0x${string}`,
-        abi: BattleABI,
+        abi: BattleABI as Abi,
         functionName: 'getGameState'
-      });
+      }) as bigint;
 
-      botLog('executeBotLogic', { gameAddress: this.gameAddress, gameState });
+      characterLog('executeBotLogic', { gameAddress: this.gameAddress, gameState });
 
-      if (BigInt(gameState) === 2n) {
+      if (gameState === 2n) {
         // Check if it's our team's turn
         const isTeamATurn = await publicClient.readContract({
           address: this.gameAddress as `0x${string}`,
-          abi: BattleABI,
+          abi: BattleABI as Abi,
           functionName: 'isTeamATurn'
-        });
+        }) as boolean;
 
         if (isTeamATurn === this.teamA) {
-          botLog("It's our turn to play!");
+          characterLog("It's our turn to play!");
 
           // Get our player stats to check energy
           const playerStats = await publicClient.readContract({
             address: this.gameAddress as `0x${string}`,
-            abi: BattleABI,
-            functionName: 'getPlayerStatsArray',
+            abi: BattleABI as Abi,
+            functionName: 'getPlayerStats',
             args: [BigInt(this.playerId)]
-          });
+          }) as any;
 
-          let currentEnergy = playerStats[1]; // Second field is energy
-          botLog('Current energy', { currentEnergy });
+          let currentEnergy = playerStats.stats[1] as bigint; // Second field is energy
+          characterLog('Current energy', { currentEnergy });
 
           // Get our cards
           const playerCards = await publicClient.readContract({
             address: this.gameAddress as `0x${string}`,
-            abi: BattleABI,
+            abi: BattleABI as Abi,
             functionName: 'playerCards',
             args: [BigInt(this.playerId)]
-          });
+          }) as any[];
 
           // Use multicall to get action types for all cards
           const actionTypeCalls = playerCards.map(card => ({
             address: CONTRACT_ADDRESSES.BASIC_DECK as `0x${string}`,
-            abi: BasicDeckABI,
+            abi: BasicDeckABI as Abi,
             functionName: 'tokenActionType',
             args: [BigInt(card.tokenId)]
           }));
@@ -155,24 +155,24 @@ export class Bot {
           const validCards = playerCards.filter((card, index) => {
             const actionType = actionTypes[index].result;
             if (actionType === undefined) {
-              botError('Undefined action type', { tokenId: card.tokenId });
+              characterError('Undefined action type', { tokenId: card.tokenId });
               return false;
             }
-            const actionTypeBigInt = typeof actionType === 'string' ? BigInt(actionType) : actionType;
-            botLog('Card info', { tokenId: card.tokenId, actionType: actionTypeBigInt});
+            const actionTypeBigInt = typeof actionType === 'string' ? BigInt(actionType) : (actionType as bigint);
+            characterLog('Card info', { tokenId: card.tokenId, actionType: actionTypeBigInt});
             return [1n, 3n, 4n].includes(actionTypeBigInt);
           });
 
-          botLog('Valid cards', { validCards: validCards.length });
+          characterLog('Valid cards', { validCards: validCards.length });
 
           while (currentEnergy > 0n) {
-            botLog("Remaining energy", { currentEnergy });
+            characterLog("Remaining energy", { currentEnergy });
             if (validCards.length > 0) {
               // Select a random valid card
               const randomCard = validCards[Math.floor(Math.random() * validCards.length)];
               const cardIndex = playerCards.indexOf(randomCard);
 
-              botLog('Playing card index:', cardIndex);
+              characterLog('Playing card index:', cardIndex);
 
               // Get enemy players
               const enemyPlayers = (players as Player[]).filter(p => p.teamA !== this.teamA);
@@ -180,7 +180,7 @@ export class Bot {
                 // Select a random enemy
                 const randomEnemy = enemyPlayers[Math.floor(Math.random() * enemyPlayers.length)];
 
-                botLog('Playing card against player:', randomEnemy.playerId);
+                characterLog('Playing card against player:', randomEnemy.playerId);
 
                 // Prepare the action
                 const actionParams = encodePacked(
@@ -189,7 +189,7 @@ export class Bot {
                 );
 
                 const encodedData = encodeFunctionData({
-                  abi: BattleABI,
+                  abi: BattleABI as Abi,
                   functionName: 'action',
                   args: [BigInt(this.playerId), BigInt(cardIndex), actionParams]
                 });
@@ -213,7 +213,7 @@ export class Bot {
                   this.env.ERC2771_FORWARDER_ADDRESS as `0x${string}`
                 );
 
-                botLog(`Played card ${cardIndex} against player ${randomEnemy.playerId}, tx: ${hash}`);
+                characterLog(`Played card ${cardIndex} against player ${randomEnemy.playerId}, tx: ${hash}`);
 
                 // Wait for transaction to be mined
                 await publicClient.waitForTransactionReceipt({ hash });
@@ -221,21 +221,21 @@ export class Bot {
                 // Update energy after action
                 const updatedStats = await publicClient.readContract({
                   address: this.gameAddress as `0x${string}`,
-                  abi: BattleABI,
-                  functionName: 'getPlayerStatsArray',
+                  abi: BattleABI as Abi,
+                  functionName: 'getPlayerStats',
                   args: [BigInt(this.playerId)]
-                });
-                currentEnergy = updatedStats[1];
-                botLog('Updated energy:', currentEnergy);
+                }) as any;
+                currentEnergy = updatedStats.stats[1] as bigint;
+                characterLog('Updated energy:', currentEnergy);
                 
                 // Update last action time
                 await this.state.storage.put("lastActionTime", Date.now());
               } else {
-                botLog('No enemy players found');
+                characterLog('No enemy players found');
                 break;
               }
             } else {
-              botLog('No valid cards found');
+              characterLog('No valid cards found');
               break;
             }
           }
@@ -243,22 +243,23 @@ export class Bot {
           // end turn
           const currentTurn = await publicClient.readContract({
             address: this.gameAddress as `0x${string}`,
-            abi: BattleABI,
+            abi: BattleABI as Abi,
             functionName: 'currentTurn'
-          });
+          }) as bigint;
 
           const hasEndedTurn = await publicClient.readContract({
             address: this.gameAddress as `0x${string}`,
-            abi: BattleABI,
+            abi: BattleABI as Abi,
             functionName: 'playerEndedTurn',
             args: [BigInt(this.playerId), currentTurn]
-          });
+          }) as boolean;
 
           if (!hasEndedTurn) {
-            botLog('Ending turn');
+            characterLog('Ending turn');
             const encodedData = encodeFunctionData({
-              abi: BattleABI,
-              functionName: 'endTurn'
+              abi: BattleABI as Abi,
+              functionName: 'endTurn',
+              args: [BigInt(this.playerId)]
             });
 
             const account = privateKeyToAccount(this.env.BOT_PRIVATE_KEY as `0x${string}`);
@@ -279,18 +280,18 @@ export class Bot {
               this.env.ERC2771_FORWARDER_ADDRESS as `0x${string}`
             );
 
-            botLog(`Ended turn, tx: ${hash}`);
+            characterLog(`Ended turn, tx: ${hash}`);
             await publicClient.waitForTransactionReceipt({ hash });
           }
           
         } else {
-          botLog("Not time to play yet");
+          characterLog("Not time to play yet");
         }
       } else {
-        if (BigInt(gameState) < 2n) {
-            botLog("Game not started yet");
-        } else if (BigInt(gameState) > 2n) {
-            botLog("Game ended");
+        if (gameState < 2n) {
+            characterLog("Game not started yet");
+        } else if (gameState > 2n) {
+            characterLog("Game ended");
             return false;
         }
       }
@@ -298,7 +299,7 @@ export class Bot {
       // If no action was taken in this execution, check the timeout
       const TEN_MINUTES = 10 * 60 * 1000; // 10 minutes in milliseconds
       if (Date.now() - lastActionTime > TEN_MINUTES) {
-        botLog("No action taken in 10 minutes, releasing resources");
+        characterLog("No action taken in 10 minutes, releasing resources");
         return false;
       }
     }
@@ -325,14 +326,14 @@ export class Bot {
       await this.state.storage.put("lastRun", Date.now());
       await this.state.storage.put("lastActionTime", Date.now());
 
-      // Execute bot logic and set the alarm
+      // Execute character logic and set the alarm
       try {
         await this.executeBotLogic();
       } catch (error) {
-        console.error("Error executing bot logic", error);
+        console.error("Error executing character logic", error);
       }
       await this.state.storage.setAlarm(Date.now() + 5000);
-      return new Response("Bot started");
+      return new Response("CharacterOperator started");
     }
 
     return new Response("Not found", { status: 404 });

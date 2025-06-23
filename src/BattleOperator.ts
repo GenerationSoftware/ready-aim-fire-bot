@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { Env } from "./Env";
 import BattleABI from "./contracts/abis/Battle.json";
-import { createPublicClient, createWalletClient, http, encodeFunctionData, encodeEventTopics } from "viem";
+import { createPublicClient, createWalletClient, http, encodeFunctionData, encodeEventTopics, type Abi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
 import { forwardTransaction } from "./forwarder/forwardTransaction";
@@ -14,7 +14,7 @@ interface WebSocketEventHandlers {
   onerror: (event: Event) => void;
 }
 
-export class Operator {
+export class BattleOperator {
   private state: DurableObjectState;
   private env: Env;
   private websocket: WebSocket & WebSocketEventHandlers | null = null;
@@ -25,7 +25,7 @@ export class Operator {
     this.env = env;
   }
 
-  private opLog(this: Operator, ...args: any[]): void {
+  private opLog(this: BattleOperator, ...args: any[]): void {
     console.log({
       origin: "OPERATOR",
       gameAddress: this.gameAddress,
@@ -33,7 +33,7 @@ export class Operator {
     });
   }
 
-  private opError(this: Operator, ...args: any[]): void {
+  private opError(this: BattleOperator, ...args: any[]): void {
     console.error({
       origin: "OPERATOR",
       gameAddress: this.gameAddress,
@@ -55,12 +55,12 @@ export class Operator {
         contracts: [
           {
             address: this.gameAddress as `0x${string}`,
-            abi: BattleABI,
+            abi: BattleABI as Abi,
             functionName: 'isTurnOver'
           },
           {
             address: this.gameAddress as `0x${string}`,
-            abi: BattleABI,
+            abi: BattleABI as Abi,
             functionName: 'getGameState'
           }
         ]
@@ -73,12 +73,12 @@ export class Operator {
       }
 
       // Only proceed if game is still active (state <= 2)
-      if (BigInt(gameState.result) > 2n) {
+      if ((gameState.result as bigint) > 2n) {
         this.opLog("Game has ended, stopping operator");
         return false;
       }
 
-      if (BigInt(gameState.result) == 1n) {
+      if ((gameState.result as bigint) == 1n) {
         this.opLog("Game has not started, delaying");
         await this.state.storage.setAlarm(Date.now() + 5000);
         return true;
@@ -86,7 +86,7 @@ export class Operator {
 
       console.log("GAME STATATETETET", gameState.result);
 
-      if (BigInt(gameState.result) == 2n && isTurnOver.result) {
+      if ((gameState.result as bigint) == 2n && isTurnOver.result) {
         this.opLog("Turn has ended, advancing to next turn");
         
         // Create wallet client for sending transactions
@@ -99,7 +99,7 @@ export class Operator {
 
         // Encode the nextTurn function call
         const data = encodeFunctionData({
-          abi: BattleABI,
+          abi: BattleABI as Abi,
           functionName: 'nextTurn'
         });
 
@@ -150,9 +150,9 @@ export class Operator {
         // Get the new turn end time
         const currentTurnEndsAt = await publicClient.readContract({
           address: this.gameAddress as `0x${string}`,
-          abi: BattleABI,
+          abi: BattleABI as Abi,
           functionName: 'currentTurnEndsAt'
-        });
+        }) as bigint;
 
         this.opLog("Scheduling next check at", currentTurnEndsAt);
 

@@ -2,7 +2,7 @@ import { Env } from "./Env";
 import BattleABI from "./contracts/abis/Battle.json";
 import BattleFactoryABI from "./contracts/abis/BattleFactory.json";
 import MinterABI from "./contracts/abis/Minter.json";
-import { createPublicClient, createWalletClient, http, encodeFunctionData, PublicClient, Log } from "viem";
+import { createPublicClient, createWalletClient, http, encodeFunctionData, PublicClient, Log, type Abi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
 import { forwardTransaction } from "./forwarder/forwardTransaction";
@@ -16,7 +16,7 @@ interface WebSocketEventHandlers {
   onerror: (event: Event) => void;
 }
 
-export class EventListener {
+export class OperatorManager {
     state: DurableObjectState;
     websocket: WebSocket & WebSocketEventHandlers | null = null;
     env: Env;
@@ -37,7 +37,7 @@ export class EventListener {
         // Create multicall contracts for this batch
         const contracts = batch.map(address => ({
           address: address as `0x${string}`,
-          abi: BattleABI,
+          abi: BattleABI as Abi,
           functionName: 'getGameState' as const
         }));
 
@@ -62,7 +62,7 @@ export class EventListener {
     }
 
     private async checkPlayerJoined(publicClient: PublicClient, fromBlock: bigint, toBlock: bigint) {
-      const playerJoinedEvent = BattleABI.find(item => item.type === 'event' && item.name === 'PlayerJoinedEvent');
+      const playerJoinedEvent = (BattleABI as Abi).find(item => item.type === 'event' && 'name' in item && item.name === 'PlayerJoinedEvent') as any;
       if (!playerJoinedEvent) {
         throw new Error('PlayerJoinedEvent not found in ABI');
       }
@@ -93,17 +93,17 @@ export class EventListener {
         const gameState = gameStates[gameAddress];
         if (gameState <= 2) {
           console.log("READY TO PLAY");
-          const args = log.args as { owner: `0x${string}`, playerId: bigint, locationX: bigint };
+          const args = (log as any).args as { owner: `0x${string}`, playerId: bigint, locationX: bigint };
           const isTeamA = args.locationX === 0n;
-          const id = this.env.BOT.idFromName(args.playerId.toString());
-          const bot = this.env.BOT.get(id);
-          bot.fetch(new Request(`http://bot/start?gameAddress=${log.address}&playerId=${args.playerId}&teamA=${isTeamA}`));
+          const id = this.env.CHARACTER_OPERATOR.idFromName(args.playerId.toString());
+          const characterOperator = this.env.CHARACTER_OPERATOR.get(id);
+          characterOperator.fetch(new Request(`http://character-operator/start?gameAddress=${log.address}&playerId=${args.playerId}&teamA=${isTeamA}`));
         }
       }
     }
 
     private async checkOperators(publicClient: PublicClient, fromBlock: bigint, toBlock: bigint) {
-      const createdGameEvent = BattleFactoryABI.find(item => item.type === 'event' && item.name === 'CreatedGame');
+      const createdGameEvent = (BattleFactoryABI as Abi).find(item => item.type === 'event' && 'name' in item && item.name === 'CreatedGame') as any;
       if (!createdGameEvent) {
         throw new Error('CreatedGame not found in ABI');
       }
@@ -119,7 +119,7 @@ export class EventListener {
       });
 
       const gameAddresses = logs.map(log => {
-        const args = log.args as { gameAddress: `0x${string}` };
+        const args = (log as any).args as { gameAddress: `0x${string}` };
         return args.gameAddress.toLowerCase();
       });
 
@@ -143,8 +143,8 @@ export class EventListener {
         console.log("GAME STATE", gameAddress, gameState);
         if (gameState <= 2) {
           console.log("GAME STARTED WITH OPERATOR", gameAddress);
-          const id = this.env.OPERATOR.idFromName(gameAddress.toString());
-          const operator = this.env.OPERATOR.get(id);
+          const id = this.env.BATTLE_OPERATOR.idFromName(gameAddress.toString());
+          const operator = this.env.BATTLE_OPERATOR.get(id);
           operator.fetch(new Request(`http://operator/start?gameAddress=${gameAddress}`));
         }
       }
@@ -203,7 +203,7 @@ export class EventListener {
       // Check if player has already minted
       const hasMinted = await publicClient.readContract({
         address: CONTRACT_ADDRESSES.MINTER as `0x${string}`,
-        abi: MinterABI,
+        abi: MinterABI as Abi,
         functionName: 'playerMinted',
         args: [address as `0x${string}`]
       }).catch(error => {
@@ -230,7 +230,7 @@ export class EventListener {
 
       // Encode the mintCollection function call
       const data = encodeFunctionData({
-        abi: MinterABI,
+        abi: MinterABI as Abi,
         functionName: 'mintCollection',
         args: [address as `0x${string}`]
       });
@@ -240,7 +240,7 @@ export class EventListener {
       // Forward the transaction using the forwarder
       const hash = await forwardTransaction(
         {
-          to: this.env.MINTER_ADDRESS as `0x${string}`,
+          to: CONTRACT_ADDRESSES.MINTER as `0x${string}`,
           data: data,
           rpcUrl: this.env.ETH_RPC_URL,
           relayerUrl: this.env.RELAYER_URL
@@ -266,7 +266,7 @@ export class EventListener {
   }
 
     async alarm() {
-      console.log("EventListener waking up...");
+      console.log("OperatorManager waking up...");
       try {
         await this.doWork();
       } catch (error) {

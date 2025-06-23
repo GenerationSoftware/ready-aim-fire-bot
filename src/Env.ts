@@ -7,7 +7,7 @@ export interface Env {
 	OPERATOR_PRIVATE_KEY: string;
 	ERC2771_FORWARDER_ADDRESS: string;
 	RELAYER_URL: string;
-	EVENT_LISTENER: DurableObjectNamespace;
-	BOT: DurableObjectNamespace;
-	OPERATOR: DurableObjectNamespace;
+	OPERATOR_MANAGER: DurableObjectNamespace;
+	CHARACTER_OPERATOR: DurableObjectNamespace;
+	BATTLE_OPERATOR: DurableObjectNamespace;
 }
