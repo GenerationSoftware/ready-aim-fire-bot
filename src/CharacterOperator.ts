@@ -8,6 +8,7 @@ import { encodeFunctionData, encodePacked, type Abi } from "viem";
 import { forwardTransaction } from "./forwarder/forwardTransaction";
 import { CONTRACT_ADDRESSES } from "./utils/deployments";
 import { createGraphQLClient, GraphQLQueries, type BattlePlayer } from "./utils/graphql";
+import { Operator, type EventSubscription } from "./Operator";
 
 interface Player {
   address: string;
@@ -15,17 +16,25 @@ interface Player {
   teamA: boolean;
 }
 
-
-export class CharacterOperator {
-  private state: DurableObjectState;
-  private env: Env;
+export class CharacterOperator extends Operator {
   private gameAddress: string | null = null;
   private playerId: string | null = null;
   private teamA: boolean | null = null;
 
   constructor(state: DurableObjectState, env: Env) {
-    this.state = state;
-    this.env = env;
+    super(state, env);
+  }
+
+  protected async getEventSubscriptions(): Promise<EventSubscription[]> {
+    return [];
+  }
+
+  protected async performPeriodicCheck(): Promise<number> {
+    const shouldContinue = await this.executeBotLogic();
+    if (!shouldContinue) {
+      return 0;
+    }
+    return Date.now() + 5000;
   }
 
   private async getGamePlayers(gameAddress: string): Promise<Player[]> {
@@ -80,27 +89,24 @@ export class CharacterOperator {
     const storedPlayerId = await this.state.storage.get("playerId");
     const storedTeamA = await this.state.storage.get("teamA") as boolean | null;
     const lastActionTime = await this.state.storage.get("lastActionTime") as number;
-    const players = await this.getGamePlayers(storedGameAddress as string);
 
     if (typeof storedGameAddress === 'string' && typeof storedPlayerId === 'string') {
       this.gameAddress = storedGameAddress;
       this.playerId = storedPlayerId;
       this.teamA = storedTeamA;
+      
+      const players = await this.getGamePlayers(storedGameAddress as string);
 
       const characterLog = (message: string, ...args: any[]) => {
-        // console.log({
-        //   origin: "BOT",
-        //   gameAddress: this.gameAddress,
-        //   playerId: this.playerId,
-        //   message,
-        //   arguments: args
-        // });
+        this.log({ 
+          playerId: this.playerId,
+          message,
+          arguments: args
+        });
       };
 
       const characterError = (message: string, ...args: any[]) => {
-        console.error({
-          origin: "CHARACTER_OPERATOR",
-          gameAddress: this.gameAddress,
+        this.error({
           playerId: this.playerId,
           message,
           arguments: args
@@ -346,54 +352,82 @@ export class CharacterOperator {
     return true;
   }
 
-  async fetch(request: Request): Promise<Response> {
+  async fetch(request: Request): Response {
     const url = new URL(request.url);
 
     if (url.pathname === "/start") {
-      // Check if operator is already running by looking for stored data
       const requestedGameAddress = url.searchParams.get("gameAddress");
       const requestedPlayerId = url.searchParams.get("playerId");
+      const teamAParam = url.searchParams.get("teamA");
       
-      // Store game address and player ID
-      this.gameAddress = requestedGameAddress;
-      this.playerId = requestedPlayerId;
-      this.teamA = url.searchParams.get("teamA") === "true";
-
-      if (!this.gameAddress || !this.playerId || this.teamA === null) {
+      // Validate ALL parameters before calling parent
+      if (!requestedGameAddress || !requestedPlayerId || teamAParam === null) {
         return new Response("Missing gameAddress or playerId or teamA", { status: 400 });
       }
 
-      // Store in durable storage
-      await this.state.storage.put("gameAddress", this.gameAddress);
+      // Store CharacterOperator-specific parameters
+      this.playerId = requestedPlayerId;
+      this.teamA = teamAParam === "true";
+      
       await this.state.storage.put("playerId", this.playerId);
       await this.state.storage.put("teamA", this.teamA);
       await this.state.storage.put("lastRun", Date.now());
       await this.state.storage.put("lastActionTime", Date.now());
 
-      // Execute character logic and set the alarm
+      // Call parent fetch method to handle common initialization
+      const result = await super.fetch(request);
+      
+      // Override success message for CharacterOperator
+      if (result.status === 200) {
+        return new Response("CharacterOperator started");
+      }
+      
+      return result;
+    }
+
+    if (url.pathname === "/state") {
+      // Return current state for testing
+      const gameAddress = await this.state.storage.get("gameAddress");
+      const playerId = await this.state.storage.get("playerId");
+      const teamA = await this.state.storage.get("teamA");
+      const lastActionTime = await this.state.storage.get("lastActionTime");
+      
+      return new Response(JSON.stringify({
+        gameAddress,
+        playerId,
+        teamA,
+        lastActionTime
+      }), {
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    if (url.pathname === "/mock") {
+      // Mock endpoint for testing - just return success
+      return new Response("Mock set");
+    }
+
+    if (url.pathname === "/execute") {
+      // Execute endpoint for testing
       try {
-        await this.executeBotLogic();
+        const shouldContinue = await this.executeBotLogic();
+        return new Response(JSON.stringify({
+          executed: shouldContinue,
+          reason: shouldContinue ? undefined : "Game has ended"
+        }), {
+          headers: { "Content-Type": "application/json" }
+        });
       } catch (error) {
-        console.error("Error executing character logic", error);
+        return new Response(JSON.stringify({
+          executed: false,
+          reason: `Error: ${error}`
+        }), {
+          headers: { "Content-Type": "application/json" }
+        });
       }
-
-      if (await this.state.storage.getAlarm() == null) {
-        await this.state.storage.setAlarm(Date.now() + 5000);
-      }
-      return new Response("CharacterOperator started");
     }
 
-    return new Response("Not found", { status: 404 });
+    return await super.fetch(request);
   }
 
-  async alarm() {
-    if (await this.executeBotLogic()) {
-        // Set the next alarm for 5 seconds from now
-        await this.state.storage.setAlarm(Date.now() + 5000);
-    } else {
-        // Game is over or we don't need to continue, clean up resources
-        await this.state.storage.deleteAll();
-        console.log("Bot resources released - game ended or no longer needed");
-    }
-  }
 } 

@@ -7,20 +7,21 @@ import { createGraphQLClient, GraphQLQueries, type Party, type ZigguratRoom } fr
 import { Operator, type EventSubscription } from "./Operator";
 
 export class ZigguratOperator extends Operator {
-  private get zigguratAddress(): string | null {
-    return this.operatorId;
+  private zigguratAddress: string | undefined;
+
+  private async getZigguratAddress(): Promise<string | undefined> {
+    if (!this.zigguratAddress) {
+      this.zigguratAddress = await this.state.storage.get("zigguratAddress") as string | undefined;
+    }
+    return this.zigguratAddress;
   }
 
-  // Abstract method implementations
-  protected getOperatorIdKey(): string {
-    return "zigguratAddress";
-  }
-
-  protected getEventSubscriptions(): EventSubscription[] {
+  protected async getEventSubscriptions(): Promise<EventSubscription[]> {
     return [
       {
         eventName: "NextRoomChosenEvent",
         abi: ZigguratABI as any[],
+        address: await this.getZigguratAddress(),
         onEvent: async (logs: any[]) => {
           for (const log of logs) {
             this.log("NextRoomChosenEvent received:", {
@@ -62,13 +63,14 @@ export class ZigguratOperator extends Operator {
   }
 
   private async checkSinglePartyProgress(partyId: bigint): Promise<void> {
-    if (!this.zigguratAddress) return;
+    const zigguratAddress = await this.getZigguratAddress();
+    if (!zigguratAddress) return;
 
     try {
       // Get the specific party from GraphQL
       const graphqlClient = createGraphQLClient(this.env);
       const result = await graphqlClient.query<{partys: {items: Party[]}}>(GraphQLQueries.getSpecificPartyByZiggurat, {
-        zigguratAddress: this.zigguratAddress.toLowerCase(),
+        zigguratAddress: zigguratAddress.toLowerCase(),
         partyId: partyId.toString()
       });
 
@@ -88,13 +90,14 @@ export class ZigguratOperator extends Operator {
   }
 
   private async checkAllPartiesProgress(): Promise<boolean> {
-    if (!this.zigguratAddress) return false;
+    const zigguratAddress = await this.getZigguratAddress();
+    if (!zigguratAddress) return false;
 
     try {
       // Use GraphQL to get all DOOR_CHOSEN parties for this ziggurat
       const graphqlClient = createGraphQLClient(this.env);
       const result = await graphqlClient.query<{partys: {items: Party[]}}>(GraphQLQueries.getPartiesByZigguratWithStateDoorChosen, {
-        zigguratAddress: this.zigguratAddress.toLowerCase()
+        zigguratAddress: zigguratAddress.toLowerCase()
       });
 
       const doorChosenParties = result.partys.items;
@@ -128,8 +131,11 @@ export class ZigguratOperator extends Operator {
 
     // Use GraphQL to check if specific room has been revealed
     const graphqlClient = createGraphQLClient(this.env);
+    const zigguratAddress = await this.getZigguratAddress();
+    if (!zigguratAddress) return;
+    
     const roomsResult = await graphqlClient.query<{zigguratRooms: {items: ZigguratRoom[]} | null}>(GraphQLQueries.getSpecificZigguratRoom, {
-      zigguratAddress: this.zigguratAddress!.toLowerCase(),
+      zigguratAddress: zigguratAddress.toLowerCase(),
       parentRoomHash: parentRoomHash,
       parentDoorIndex: chosenDoorIndex
     });
@@ -183,7 +189,7 @@ export class ZigguratOperator extends Operator {
       // The contract expects: keccak256(abi.encodePacked(block.chainid, address(this), _roomHash, _doorIndex))
       this.log('Creating signature with params:', {
         chainId: chainId,
-        contractAddress: this.zigguratAddress,
+        contractAddress: await this.getZigguratAddress(),
         roomHash: roomHash,
         doorIndex: doorIndex,
         operatorAddress: account.address
@@ -192,7 +198,7 @@ export class ZigguratOperator extends Operator {
       const messageHash = keccak256(
         encodePacked(
           ['uint256', 'address', 'bytes32', 'uint256'],
-          [BigInt(chainId), this.zigguratAddress as `0x${string}`, roomHash as `0x${string}`, BigInt(doorIndex)]
+          [BigInt(chainId), (await this.getZigguratAddress()) as `0x${string}`, roomHash as `0x${string}`, BigInt(doorIndex)]
         )
       );
 
@@ -234,7 +240,7 @@ export class ZigguratOperator extends Operator {
       try {
         hash = await forwardTransaction(
           {
-            to: this.zigguratAddress as `0x${string}`,
+            to: (await this.getZigguratAddress()) as `0x${string}`,
             data: data,
             rpcUrl: this.env.ETH_RPC_URL,
             relayerUrl: this.env.RELAYER_URL
@@ -299,7 +305,7 @@ export class ZigguratOperator extends Operator {
       try {
         hash = await forwardTransaction(
           {
-            to: this.zigguratAddress as `0x${string}`,
+            to: (await this.getZigguratAddress()) as `0x${string}`,
             data: data,
             rpcUrl: this.env.ETH_RPC_URL,
             relayerUrl: this.env.RELAYER_URL

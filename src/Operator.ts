@@ -6,13 +6,13 @@ import { arbitrum } from "viem/chains";
 export interface EventSubscription {
   eventName: string;
   abi: any[];
+  address?: string; // Optional contract address for the subscription
   onEvent: (logs: any[]) => Promise<void>;
 }
 
 export abstract class Operator {
   protected state: DurableObjectState;
   protected env: Env;
-  protected operatorId: string | null = null;
   protected wsClient: any = null;
   protected wsUnwatch: (() => void) | null = null;
 
@@ -25,15 +25,13 @@ export abstract class Operator {
   }
 
   // Abstract methods that subclasses must implement
-  protected abstract getOperatorIdKey(): string; // e.g., "gameAddress" or "zigguratAddress"
-  protected abstract getEventSubscriptions(): EventSubscription[];
+  protected abstract getEventSubscriptions(): Promise<EventSubscription[]>;
   protected abstract performPeriodicCheck(): Promise<number>; // Returns next alarm time, 0 = shutdown
 
   // Logging methods that subclasses can override
   protected log(...args: any[]): void {
     console.log({
       origin: this.constructor.name.toUpperCase(),
-      operatorId: this.operatorId,
       ...args
     });
   }
@@ -41,16 +39,18 @@ export abstract class Operator {
   protected error(...args: any[]): void {
     console.error({
       origin: this.constructor.name.toUpperCase(),
-      operatorId: this.operatorId,
       ...args
     });
   }
 
   private async restoreConnection(): Promise<void> {
     try {
-      this.operatorId = await this.state.storage.get(this.getOperatorIdKey()) as string;
-      if (this.operatorId && !this.wsClient) {
-        this.log("Restoring WebSocket connection for:", this.operatorId);
+      // Check if we have any stored parameters (indicates active connection)
+      const storedKeys = await this.state.storage.list();
+      const hasStoredParams = storedKeys.size > 0;
+      
+      if (hasStoredParams && !this.wsClient) {
+        this.log("Restoring WebSocket connection with stored parameters");
         await this.setupWebSocketConnection();
       }
     } catch (error) {
@@ -71,13 +71,8 @@ export abstract class Operator {
   }
 
   private async setupWebSocketConnection(): Promise<void> {
-    if (!this.operatorId) {
-      this.error("Cannot setup WebSocket without operatorId");
-      return;
-    }
-
     try {
-      const subscriptions = this.getEventSubscriptions();
+      const subscriptions = await this.getEventSubscriptions();
       
       if (subscriptions.length === 0) {
         this.log("No event subscriptions defined, skipping WebSocket setup");
@@ -106,14 +101,17 @@ export abstract class Operator {
         this.log(`Found ${subscription.eventName} in ABI:`, eventDef);
 
         // Listen for events from this specific contract
-        const unwatch = this.wsClient.watchEvent({
-          address: this.operatorId as `0x${string}`,
+        const event = {
           event: eventDef,
           onLogs: (logs: any[]) => {
             this.log(`${subscription.eventName} received:`, logs.length, "events");
             subscription.onEvent(logs);
           }
-        });
+        } as any;
+        if (subscription.address) {
+          event.address = subscription.address as `0x${string}`;
+        }
+        const unwatch = this.wsClient.watchEvent(event);
 
         unwatchFunctions.push(unwatch);
       }
@@ -135,16 +133,17 @@ export abstract class Operator {
     const url = new URL(request.url);
 
     if (url.pathname === "/start") {
-      const paramName = this.getOperatorIdKey() === "gameAddress" ? "gameAddress" : "zigguratAddress";
-      const requestedOperatorId = url.searchParams.get(paramName);
-
-      if (!requestedOperatorId) {
-        return new Response(`Missing ${paramName}`, { status: 400 });
+      // Store all search parameters as individual key-value pairs
+      const searchParams = Array.from(url.searchParams.entries());
+      
+      if (searchParams.length === 0) {
+        return new Response("Missing search parameters", { status: 400 });
       }
 
-      // Set up new connection
-      this.operatorId = requestedOperatorId;
-      await this.state.storage.put(this.getOperatorIdKey(), this.operatorId);
+      // Store all parameters in storage
+      for (const [key, value] of searchParams) {
+        await this.state.storage.put(key, value);
+      }
 
       let hasError = false;
       let errorMessage = "";
@@ -188,7 +187,7 @@ export abstract class Operator {
         return new Response(`${this.constructor.name} started with errors: ${errorMessage}`, { status: 207 });
       }
       
-      return new Response(`${this.constructor.name} started`);
+      return new Response(`${this.constructor.name} started with parameters: ${searchParams.map(([k,v]) => `${k}=${v}`).join(', ')}`);
     }
 
     return new Response("Not found", { status: 404 });

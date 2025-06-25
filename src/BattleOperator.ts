@@ -8,20 +8,21 @@ import { createGraphQLClient, GraphQLQueries, type Battle, type BattleTurn } fro
 import { Operator, type EventSubscription } from "./Operator";
 
 export class BattleOperator extends Operator {
-  private get gameAddress(): string | null {
-    return this.operatorId;
+  private gameAddress: string | undefined;
+
+  private async getGameAddress(): Promise<string | undefined> {
+    if (!this.gameAddress) {
+      this.gameAddress = await this.state.storage.get("gameAddress") as string | undefined;
+    }
+    return this.gameAddress;
   }
 
-  // Abstract method implementations
-  protected getOperatorIdKey(): string {
-    return "gameAddress";
-  }
-
-  protected getEventSubscriptions(): EventSubscription[] {
+  protected async getEventSubscriptions(): Promise<EventSubscription[]> {
     return [
       {
         eventName: "EndedTurnEvent",
         abi: BattleABI as any[],
+        address: await this.getGameAddress(),
         onEvent: async (logs: any[]) => {
           for (const log of logs) {
             this.log("EndedTurnEvent received:", {
@@ -38,7 +39,6 @@ export class BattleOperator extends Operator {
   }
 
   protected async performPeriodicCheck(): Promise<number> {
-    // checkAndAdvanceTurn now returns the next alarm time directly
     return await this.checkAndAdvanceTurn();
   }
 
@@ -60,7 +60,8 @@ export class BattleOperator extends Operator {
   }
 
   private async checkAndAdvanceTurn(): Promise<number> {
-    if (!this.gameAddress) return 0;
+    const gameAddress = await this.getGameAddress();
+    if (!gameAddress) return 0;
 
     const publicClient = createPublicClient({
       chain: arbitrum,
@@ -74,13 +75,13 @@ export class BattleOperator extends Operator {
       // Get battle data from GraphQL
       const battleResult = await graphqlClient.query<{battles: {items: Battle[]}}>(GraphQLQueries.getBattlesByGameState);
       
-      const battle = battleResult.battles.items.find(b => b.id.toLowerCase() === this.gameAddress!.toLowerCase());
+      const battle = battleResult.battles.items.find(b => b.id.toLowerCase() === gameAddress.toLowerCase());
       
       if (!battle) {
         this.log("Battle not found in GraphQL, checking contract state");
         // Fallback to contract check
         const gameState = await publicClient.readContract({
-          address: this.gameAddress as `0x${string}`,
+          address: gameAddress as `0x${string}`,
           abi: BattleABI as Abi,
           functionName: 'getGameState'
         }) as bigint;
@@ -101,12 +102,12 @@ export class BattleOperator extends Operator {
       const multicallResults = await publicClient.multicall({
         contracts: [
           {
-            address: this.gameAddress as `0x${string}`,
+            address: gameAddress as `0x${string}`,
             abi: BattleABI as Abi,
             functionName: 'isTurnOver'
           },
           {
-            address: this.gameAddress as `0x${string}`,
+            address: gameAddress as `0x${string}`,
             abi: BattleABI as Abi,
             functionName: 'getGameState'
           }
@@ -142,7 +143,7 @@ export class BattleOperator extends Operator {
         
         // Get the latest turn information from GraphQL for context
         const turnsResult = await graphqlClient.query<{battleTurns: {items: BattleTurn[]}}>(GraphQLQueries.getBattleTurns, {
-          battleId: this.gameAddress.toLowerCase()
+          battleId: gameAddress.toLowerCase()
         });
         
         if (turnsResult.battleTurns.items.length > 0) {
@@ -169,14 +170,14 @@ export class BattleOperator extends Operator {
           functionName: 'nextTurn'
         });
 
-        this.log("Calling nextTurn for game ", this.gameAddress);
+        this.log("Calling nextTurn for game ", gameAddress);
 
         // Forward the transaction
         let hash;
         try {
           hash = await forwardTransaction(
             {
-              to: this.gameAddress as `0x${string}`,
+              to: gameAddress as `0x${string}`,
               data: data,
               rpcUrl: this.env.ETH_RPC_URL,
               relayerUrl: this.env.RELAYER_URL
@@ -202,7 +203,7 @@ export class BattleOperator extends Operator {
             return Date.now() + 1000;
           }
         } else {
-          console.error("No transaction hash received from forwardTransaction for game ", this.gameAddress);
+          console.error("No transaction hash received from forwardTransaction for game ", gameAddress);
           // Schedule another check in 1 second
           return Date.now() + 1000;
         }
@@ -211,7 +212,7 @@ export class BattleOperator extends Operator {
 
         // Get the new turn end time
         const currentTurnEndsAt = await publicClient.readContract({
-          address: this.gameAddress as `0x${string}`,
+          address: gameAddress as `0x${string}`,
           abi: BattleABI as Abi,
           functionName: 'currentTurnEndsAt'
         }) as bigint;
