@@ -1,34 +1,54 @@
 import { DurableObject } from "cloudflare:workers";
 import { Env } from "./Env";
 import BattleABI from "./contracts/abis/Battle.json";
-import { createPublicClient, createWalletClient, http, encodeFunctionData, encodeEventTopics, type Abi } from "viem";
+import { createPublicClient, createWalletClient, http, webSocket, encodeFunctionData, type Abi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
 import { forwardTransaction } from "./forwarder/forwardTransaction";
 import { createGraphQLClient, GraphQLQueries, type Battle, type BattleTurn } from "./utils/graphql";
 
-// WebSocket interface to match Cloudflare Workers WebSocket API
-interface WebSocketEventHandlers {
-  onopen: (event: Event) => void;
-  onmessage: (event: MessageEvent) => void;
-  onclose: (event: CloseEvent) => void;
-  onerror: (event: Event) => void;
-}
-
 export class BattleOperator {
   private state: DurableObjectState;
   private env: Env;
-  private websocket: WebSocket & WebSocketEventHandlers | null = null;
   private gameAddress: string | null = null;
+  private wsClient: any = null;
+  private wsUnwatch: (() => void) | null = null;
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
     this.env = env;
+    
+    // Restore connection if it was previously established
+    this.restoreConnection();
+  }
+
+  private async restoreConnection(): Promise<void> {
+    try {
+      this.gameAddress = await this.state.storage.get("gameAddress") as string;
+      if (this.gameAddress && !this.wsClient) {
+        this.opLog("Restoring WebSocket connection for game:", this.gameAddress);
+        await this.setupWebSocketConnection();
+      }
+    } catch (error) {
+      this.opError("Error restoring WebSocket connection:", error);
+    }
+  }
+
+  private async cleanupWebSocketConnection(): Promise<void> {
+    try {
+      if (this.wsUnwatch) {
+        this.wsUnwatch();
+        this.wsUnwatch = null;
+      }
+      this.wsClient = null;
+    } catch (error) {
+      this.opError("Error cleaning up WebSocket connection:", error);
+    }
   }
 
   private opLog(this: BattleOperator, ...args: any[]): void {
     console.log({
-      origin: "OPERATOR",
+      origin: "BATTLE_OPERATOR",
       gameAddress: this.gameAddress,
       ...args
     });
@@ -36,7 +56,7 @@ export class BattleOperator {
 
   private opError(this: BattleOperator, ...args: any[]): void {
     console.error({
-      origin: "OPERATOR",
+      origin: "BATTLE_OPERATOR",
       gameAddress: this.gameAddress,
       ...args
     });
@@ -82,18 +102,33 @@ export class BattleOperator {
         return true;
       }
 
-      // Check if turn has ended using contract call (real-time data)
-      const isTurnOver = await publicClient.readContract({
-        address: this.gameAddress as `0x${string}`,
-        abi: BattleABI as Abi,
-        functionName: 'isTurnOver'
-      }) as boolean;
+      // Check turn status and game state using multicall (real-time data)
+      const multicallResults = await publicClient.multicall({
+        contracts: [
+          {
+            address: this.gameAddress as `0x${string}`,
+            abi: BattleABI as Abi,
+            functionName: 'isTurnOver'
+          },
+          {
+            address: this.gameAddress as `0x${string}`,
+            abi: BattleABI as Abi,
+            functionName: 'getGameState'
+          }
+        ]
+      });
 
-      const gameState = await publicClient.readContract({
-        address: this.gameAddress as `0x${string}`,
-        abi: BattleABI as Abi,
-        functionName: 'getGameState'
-      }) as bigint;
+      if (multicallResults[0].status === 'failure' || multicallResults[1].status === 'failure') {
+        this.opError("Multicall failed:", {
+          isTurnOver: multicallResults[0].status === 'failure' ? multicallResults[0].error : 'success',
+          gameState: multicallResults[1].status === 'failure' ? multicallResults[1].error : 'success'
+        });
+        await this.state.storage.setAlarm(Date.now() + 5000);
+        return true;
+      }
+
+      const isTurnOver = multicallResults[0].result as boolean;
+      const gameState = multicallResults[1].result as bigint;
 
       // Only proceed if game is still active (state <= 2)
       if (gameState > 2n) {
@@ -195,7 +230,7 @@ export class BattleOperator {
         this.opLog("Scheduling next check at", currentTurnEndsAt);
 
         // Schedule next check at turn end time
-        await this.state.storage.setAlarm(Number(currentTurnEndsAt) * 1000);
+        await this.state.storage.setAlarm(Number(currentTurnEndsAt) * 1000 + 500);
       } else {
         this.opLog("Turn has not ended, checking again in 1 second");
         // Check again in 1 second
@@ -210,128 +245,136 @@ export class BattleOperator {
     return true;
   }
 
-  private async connect() {
-    if (this.websocket) return;
+  private async setupWebSocketConnection(): Promise<void> {
+    if (!this.gameAddress) {
+      this.opError("Cannot setup WebSocket without gameAddress");
+      return;
+    }
 
-    // Convert HTTP URL to WebSocket URL
-    const wsUrl = this.env.ETH_RPC_URL.replace('http://', 'ws://').replace('https://', 'wss://');
-    this.opLog("Connecting to WebSocket", wsUrl);
+    try {
+      // Find EndedTurnEvent in the ABI
+      const endedTurnEvent = (BattleABI as any[]).find(
+        item => item.type === 'event' && item.name === 'EndedTurnEvent'
+      );
 
-    const ws = new WebSocket(wsUrl) as WebSocket & WebSocketEventHandlers;
-
-    ws.onopen = () => {
-      this.opLog("✅ WebSocket connected");
-
-      const subscribeToEvent = (eventName: string) => {
-        // Get the EndedTurnEvent from the ABI
-        const endedTurnEvent = BattleABI.find(
-          (item) => item.type === "event" && item.name === eventName
-        );
-
-        if (!endedTurnEvent) {
-          throw new Error(`${eventName} not found in ABI`);
-        }
-
-        // Get the event topic using viem's encodeEventTopics
-        const eventTopic = encodeEventTopics({
-          abi: [endedTurnEvent],
-          eventName: eventName as "EndedTurnEvent" | "GameStartedEvent" | "NextTurnEvent" | "OwnershipTransferred" | "PlayerActionEvent" | "PlayerJoinedEvent" | "PlayerStatUpdatedEvent"
-        })[0];
-
-        // Subscribe to EndedTurnEvent
-        const subscribePayload = {
-          jsonrpc: '2.0',
-          id: 1,
-          method: "eth_subscribe",
-          params: [
-            "logs",
-            {
-              address: this.gameAddress,
-              topics: [eventTopic]
-            }
-          ]
-        };
-
-        return subscribePayload;
-      };
-
-      this.opLog("Subscribing to EndedTurnEvent...");
-      ws.send(JSON.stringify(subscribeToEvent('EndedTurnEvent')));
-      
-      this.opLog("Subscribing to GameStartedEvent...");
-      ws.send(JSON.stringify(subscribeToEvent('GameStartedEvent')));
-    };
-
-    ws.onmessage = async (event: MessageEvent) => {
-      try {
-        const data = JSON.parse(event.data as string);
-        if (data.method === "eth_subscription") {
-          this.opLog("📦 EndedTurnEvent received");
-          await this.checkAndAdvanceTurn();
-        }
-      } catch (err) {
-        console.error("⚠️ Failed to parse log message", err);
+      if (!endedTurnEvent) {
+        throw new Error("EndedTurnEvent not found in Battle ABI");
       }
-    };
 
-    ws.onclose = () => {
-      this.opLog("🔁 WebSocket closed, retrying...");
-      this.websocket = null;
-      setTimeout(() => this.connect(), 5000);
-    };
+      this.opLog("Found EndedTurnEvent in ABI:", endedTurnEvent);
 
-    ws.onerror = (err: Event) => {
-      console.error("🛑 WebSocket error", err);
-    };
+      // Create WebSocket client
+      this.wsClient = createPublicClient({
+        chain: arbitrum,
+        transport: webSocket(this.env.ETH_RPC_URL)
+      });
 
-    this.websocket = ws;
+      // Listen for EndedTurnEvent from this specific Battle using the ABI event
+      const unwatch = this.wsClient.watchEvent({
+        address: this.gameAddress as `0x${string}`,
+        event: endedTurnEvent,
+        onLogs: (logs: any[]) => {
+          for (const log of logs) {
+            this.opLog("EndedTurnEvent received:", {
+              turn: log.args.turn?.toString(),
+              player: log.args.player
+            });
+            
+            // Trigger turn advancement check
+            this.checkAndAdvanceTurn();
+          }
+        }
+      });
+
+      // Store the unwatch function for cleanup
+      this.wsUnwatch = unwatch;
+      
+      this.opLog("WebSocket connection established for Battle events");
+      
+    } catch (error) {
+      this.opError("Error setting up WebSocket connection:", error);
+      throw error; // Re-throw to prevent silent failures
+    }
   }
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
     if (url.pathname === "/start") {
-      // Check if operator is already running by looking for stored game address
       const requestedGameAddress = url.searchParams.get("gameAddress");
 
-      this.gameAddress = requestedGameAddress;
-      if (!this.gameAddress) {
+      if (!requestedGameAddress) {
         return new Response("Missing gameAddress", { status: 400 });
       }
 
-      // Connect to WebSocket
-      try {
-        await this.connect();
-      } catch (error) {
-        console.error("Error connecting to WebSocket", error);
+      // Get stored game address
+      const storedGameAddress = await this.state.storage.get("gameAddress") as string;
+      
+      // Set up new connection
+      this.gameAddress = requestedGameAddress;
+      await this.state.storage.put("gameAddress", this.gameAddress);
+
+      let hasError = false;
+      let errorMessage = "";
+
+      // Setup WebSocket connection if not already connected
+      if (!this.wsClient) {
+        try {
+          // Clean up any existing connection
+          await this.cleanupWebSocketConnection();
+          
+          // Setup WebSocket connection
+          await this.setupWebSocketConnection();
+          this.opLog("WebSocket connection established");
+        } catch (error) {
+          this.opError("Failed to setup WebSocket connection:", error);
+          hasError = true;
+          errorMessage += `WebSocket error: ${error}; `;
+        }
+      } else {
+        // this.opLog("WebSocket connection already exists");
       }
 
-      if (await this.state.storage.getAlarm() == null) {
-        await this.state.storage.setAlarm(Date.now() + 5000);
+      // Setup alarm if none exists or if existing alarm is in the past
+      try {
+        const currentAlarm = await this.state.storage.getAlarm();
+        const currentTime = Date.now();
+        
+        if (currentAlarm === null || currentAlarm < currentTime) {
+          this.state.storage.setAlarm(currentTime + 5000);
+          this.opLog("Alarm scheduled for periodic checks");
+        } else {
+          // this.opLog("Alarm already scheduled");
+        }
+      } catch (error) {
+        this.opError("Failed to setup alarm:", error);
+        hasError = true;
+        errorMessage += `Alarm error: ${error}; `;
       }
-      return new Response("Operator started");
+
+      if (hasError) {
+        return new Response(`BattleOperator started with errors: ${errorMessage}`, { status: 207 });
+      }
+      
+      return new Response("BattleOperator started");
     }
 
     return new Response("Not found", { status: 404 });
   }
 
-  async alarm() {
-    console.log("Operator wake up for game ", this.gameAddress);
-    
-    // Check if WebSocket is connected, if not try to reconnect
-    if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
-      try {
-        console.log("WebSocket not connected, attempting to reconnect");
-        await this.connect();
-      } catch (error) {
-        console.error("Failed to reconnect WebSocket", error);
+  async alarm(): Promise<void> {
+    try {
+      this.opLog("BattleOperator alarm triggered");
+      // Perform periodic check of battle state and turn advancement
+      if (!await this.checkAndAdvanceTurn()) {
+        // Game is over or we don't need to continue, clean up resources
+        await this.state.storage.deleteAll();
+        this.opLog("Operator resources released - game ended or no longer needed");
       }
-    }
-
-    if (!await this.checkAndAdvanceTurn()) {
-      // Game is over or we don't need to continue, clean up resources
-      await this.state.storage.deleteAll();
-      console.log("Operator resources released - game ended or no longer needed");
+    } catch (error) {
+      this.opError("Error in alarm:", error);
+      // Continue with next alarm even on error
+      this.state.storage.setAlarm(Date.now() + 5000);
     }
   }
 }

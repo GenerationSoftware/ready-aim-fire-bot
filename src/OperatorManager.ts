@@ -1,12 +1,8 @@
 import { Env } from "./Env";
 import BattleABI from "./contracts/abis/Battle.json";
-import MinterABI from "./contracts/abis/Minter.json";
-import { createPublicClient, createWalletClient, http, encodeFunctionData, type Abi } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { createPublicClient, http, type Abi } from "viem";
 import { arbitrum } from "viem/chains";
-import { forwardTransaction } from "./forwarder/forwardTransaction";
-import { CONTRACT_ADDRESSES } from "./utils/deployments";
-import { createGraphQLClient, GraphQLQueries, type Battle, type BattlePlayer, type Party, type Character, type Ziggurat } from "./utils/graphql";
+import { createGraphQLClient, GraphQLQueries, type Battle, type Character, type Ziggurat } from "./utils/graphql";
 
 export class OperatorManager {
     state: DurableObjectState;
@@ -16,7 +12,6 @@ export class OperatorManager {
       this.state = state;
       this.env = env;
     }
-
 
     private async checkCharacterOperators() {
       // Use GraphQL to find battle players where our operator is a character
@@ -31,7 +26,6 @@ export class OperatorManager {
       // Check each battle player
       for (const battlePlayer of result.characters.items) {
         const battle = battlePlayer.battle;
-        const operatorKey = `${battle.id}-${battlePlayer.playerId}`;
         
         // Start character operator
         const id = this.env.CHARACTER_OPERATOR.idFromName(battlePlayer.playerId);
@@ -43,6 +37,7 @@ export class OperatorManager {
     private async checkBattleOperators() {
       // Use GraphQL to find battles where our address is the operator
       const graphqlClient = createGraphQLClient(this.env);
+      
       const result = await graphqlClient.query<{battles: {items: Battle[]}}>(GraphQLQueries.getBattlesWithOperator, {
         operator: this.env.OPERATOR_ADDRESS.toLowerCase()
       });
@@ -55,11 +50,6 @@ export class OperatorManager {
 
       const battleAddresses = result.battles.items.map(battle => battle.id);
       
-      if (battleAddresses.length === 0) {
-        console.log("No battles found with operator");
-        return;
-      }
-
       // Create multicall contracts to check game state for all battles
       const gameStateContracts = battleAddresses.map(address => ({
         address: address as `0x${string}`,
@@ -76,15 +66,13 @@ export class OperatorManager {
       const activeBattles = result.battles.items.filter((battle, index) => {
         const response = gameStateResponses[index];
         if (response.status === 'failure') {
-          console.error(`Failed to get game state for battle ${battle.id}`);
+          console.error(`Failed to get game state for battle ${battle.id}:`, response.error);
           return false;
         }
-        const gameState = response.result as bigint;
-        return gameState === 2n;
+        const gameState = Number(response.result);
+        return gameState === 2;
       });
 
-      console.log("Found %s total battles, %s active (gameState=2):", result.battles.items.length, activeBattles.length);
-      
       for (const battle of activeBattles) {
         const battleAddress = battle.id.toLowerCase();
         const id = this.env.BATTLE_OPERATOR.idFromName(battleAddress);

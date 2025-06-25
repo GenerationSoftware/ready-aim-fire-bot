@@ -19,12 +19,16 @@ export function createGraphQLClient(env: Env): GraphQLClient {
       });
 
       if (!response.ok) {
+        const responseText = await response.text();
+        console.error(`❌ GraphQL HTTP Error: ${response.status} ${response.statusText}`);
+        console.error(`❌ Response body:`, responseText);
         throw new Error(`GraphQL request failed: ${response.status} ${response.statusText}`);
       }
 
       const result = await response.json() as { data?: T; errors?: any[] };
       
       if (result.errors) {
+        console.error(`❌ GraphQL Query Errors:`, JSON.stringify(result.errors));
         throw new Error(`GraphQL query error: ${JSON.stringify(result.errors)}`);
       }
 
@@ -228,6 +232,22 @@ export const GraphQLQueries = {
   getBattlesWithOperator: `
     query GetBattlesWithOperator($operator: String!) {
       battles(where: { operator: $operator, currentTurn_gt: "0" }) {
+        items {
+          id
+          operator
+          gameStartedAt
+          currentTurn
+          teamAStarts
+          turnDuration
+        }
+      }
+    }
+  `,
+
+  // Alternative query to find all active battles (for debugging)
+  getAllActiveBattles: `
+    query GetAllActiveBattles {
+      battles(where: { gameStartedAt_not: null, currentTurn_gt: "0" }, limit: 10) {
         items {
           id
           operator
