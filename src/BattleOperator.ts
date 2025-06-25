@@ -1,52 +1,49 @@
-import { DurableObject } from "cloudflare:workers";
 import { Env } from "./Env";
 import BattleABI from "./contracts/abis/Battle.json";
-import { createPublicClient, createWalletClient, http, webSocket, encodeFunctionData, type Abi } from "viem";
+import { createPublicClient, createWalletClient, http, encodeFunctionData, type Abi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
 import { forwardTransaction } from "./forwarder/forwardTransaction";
 import { createGraphQLClient, GraphQLQueries, type Battle, type BattleTurn } from "./utils/graphql";
+import { Operator, type EventSubscription } from "./Operator";
 
-export class BattleOperator {
-  private state: DurableObjectState;
-  private env: Env;
-  private gameAddress: string | null = null;
-  private wsClient: any = null;
-  private wsUnwatch: (() => void) | null = null;
-
-  constructor(state: DurableObjectState, env: Env) {
-    this.state = state;
-    this.env = env;
-    
-    // Restore connection if it was previously established
-    this.restoreConnection();
+export class BattleOperator extends Operator {
+  private get gameAddress(): string | null {
+    return this.operatorId;
   }
 
-  private async restoreConnection(): Promise<void> {
-    try {
-      this.gameAddress = await this.state.storage.get("gameAddress") as string;
-      if (this.gameAddress && !this.wsClient) {
-        this.opLog("Restoring WebSocket connection for game:", this.gameAddress);
-        await this.setupWebSocketConnection();
+  // Abstract method implementations
+  protected getOperatorIdKey(): string {
+    return "gameAddress";
+  }
+
+  protected getEventSubscriptions(): EventSubscription[] {
+    return [
+      {
+        eventName: "EndedTurnEvent",
+        abi: BattleABI as any[],
+        onEvent: async (logs: any[]) => {
+          for (const log of logs) {
+            this.log("EndedTurnEvent received:", {
+              turn: log.args.turn?.toString(),
+              player: log.args.player
+            });
+            
+            // Trigger turn advancement check
+            this.checkAndAdvanceTurn();
+          }
+        }
       }
-    } catch (error) {
-      this.opError("Error restoring WebSocket connection:", error);
-    }
+    ];
   }
 
-  private async cleanupWebSocketConnection(): Promise<void> {
-    try {
-      if (this.wsUnwatch) {
-        this.wsUnwatch();
-        this.wsUnwatch = null;
-      }
-      this.wsClient = null;
-    } catch (error) {
-      this.opError("Error cleaning up WebSocket connection:", error);
-    }
+  protected async performPeriodicCheck(): Promise<number> {
+    // checkAndAdvanceTurn now returns the next alarm time directly
+    return await this.checkAndAdvanceTurn();
   }
 
-  private opLog(this: BattleOperator, ...args: any[]): void {
+  // Override logging methods to maintain battle-specific naming
+  protected log(...args: any[]): void {
     console.log({
       origin: "BATTLE_OPERATOR",
       gameAddress: this.gameAddress,
@@ -54,7 +51,7 @@ export class BattleOperator {
     });
   }
 
-  private opError(this: BattleOperator, ...args: any[]): void {
+  protected error(...args: any[]): void {
     console.error({
       origin: "BATTLE_OPERATOR",
       gameAddress: this.gameAddress,
@@ -62,8 +59,8 @@ export class BattleOperator {
     });
   }
 
-  private async checkAndAdvanceTurn(): Promise<boolean> {
-    if (!this.gameAddress) return false;
+  private async checkAndAdvanceTurn(): Promise<number> {
+    if (!this.gameAddress) return 0;
 
     const publicClient = createPublicClient({
       chain: arbitrum,
@@ -80,7 +77,7 @@ export class BattleOperator {
       const battle = battleResult.battles.items.find(b => b.id.toLowerCase() === this.gameAddress!.toLowerCase());
       
       if (!battle) {
-        this.opLog("Battle not found in GraphQL, checking contract state");
+        this.log("Battle not found in GraphQL, checking contract state");
         // Fallback to contract check
         const gameState = await publicClient.readContract({
           address: this.gameAddress as `0x${string}`,
@@ -89,17 +86,15 @@ export class BattleOperator {
         }) as bigint;
         
         if (gameState > 2n) {
-          this.opLog("Game has ended, stopping operator");
-          return false;
+          this.log("Game has ended, stopping operator");
+          return 0;
         } else if (gameState == 1n) {
-          this.opLog("Game has not started, delaying");
-          await this.state.storage.setAlarm(Date.now() + 5000);
-          return true;
+          this.log("Game has not started, delaying");
+          return Date.now() + 5000;
         }
       } else if (!battle.gameStartedAt) {
-        this.opLog("Game has not started according to GraphQL, delaying");
-        await this.state.storage.setAlarm(Date.now() + 5000);
-        return true;
+        this.log("Game has not started according to GraphQL, delaying");
+        return Date.now() + 5000;
       }
 
       // Check turn status and game state using multicall (real-time data)
@@ -119,12 +114,11 @@ export class BattleOperator {
       });
 
       if (multicallResults[0].status === 'failure' || multicallResults[1].status === 'failure') {
-        this.opError("Multicall failed:", {
+        this.error("Multicall failed:", {
           isTurnOver: multicallResults[0].status === 'failure' ? multicallResults[0].error : 'success',
           gameState: multicallResults[1].status === 'failure' ? multicallResults[1].error : 'success'
         });
-        await this.state.storage.setAlarm(Date.now() + 5000);
-        return true;
+        return Date.now() + 5000;
       }
 
       const isTurnOver = multicallResults[0].result as boolean;
@@ -132,20 +126,19 @@ export class BattleOperator {
 
       // Only proceed if game is still active (state <= 2)
       if (gameState > 2n) {
-        this.opLog("Game has ended, stopping operator");
-        return false;
+        this.log("Game has ended, stopping operator");
+        return 0;
       }
 
       if (gameState == 1n) {
-        this.opLog("Game has not started, delaying");
-        await this.state.storage.setAlarm(Date.now() + 5000);
-        return true;
+        this.log("Game has not started, delaying");
+        return Date.now() + 5000;
       }
 
-      this.opLog("Game state:", gameState, "Turn over:", isTurnOver);
+      this.log("Game state:", gameState, "Turn over:", isTurnOver);
 
       if (gameState == 2n && isTurnOver) {
-        this.opLog("Turn has ended, advancing to next turn");
+        this.log("Turn has ended, advancing to next turn");
         
         // Get the latest turn information from GraphQL for context
         const turnsResult = await graphqlClient.query<{battleTurns: {items: BattleTurn[]}}>(GraphQLQueries.getBattleTurns, {
@@ -154,7 +147,7 @@ export class BattleOperator {
         
         if (turnsResult.battleTurns.items.length > 0) {
           const latestTurn = turnsResult.battleTurns.items[0];
-          this.opLog("Latest turn from GraphQL:", {
+          this.log("Latest turn from GraphQL:", {
             turn: latestTurn.turn,
             startedAt: latestTurn.startedAt,
             duration: latestTurn.duration,
@@ -176,7 +169,7 @@ export class BattleOperator {
           functionName: 'nextTurn'
         });
 
-        this.opLog("Calling nextTurn for game ", this.gameAddress);
+        this.log("Calling nextTurn for game ", this.gameAddress);
 
         // Forward the transaction
         let hash;
@@ -193,32 +186,28 @@ export class BattleOperator {
           );
         } catch (error) {
           console.error("Error forwarding transaction:", error);
-          // Schedule another check in 1 second
-          await this.state.storage.setAlarm(Date.now() + 1000);
-          return true;
+          return Date.now() + 1000;
         }
 
-        this.opLog("Next turn transaction forwarded:", hash);
+        this.log("Next turn transaction forwarded:", hash);
 
         // Wait for transaction receipt only if we have a valid hash
         if (hash) {
           try {
             const receipt = await publicClient.waitForTransactionReceipt({ hash });
-            this.opLog("Next turn transaction confirmed:", receipt);
+            this.log("Next turn transaction confirmed:", receipt);
           } catch (error) {
             console.error("Error waiting for transaction receipt:", error);
             // Schedule another check in 1 second
-            await this.state.storage.setAlarm(Date.now() + 1000);
-            return true;
+            return Date.now() + 1000;
           }
         } else {
           console.error("No transaction hash received from forwardTransaction for game ", this.gameAddress);
           // Schedule another check in 1 second
-          await this.state.storage.setAlarm(Date.now() + 1000);
-          return true;
+          return Date.now() + 1000;
         }
 
-        this.opLog("Reading currentTurnEndsAt");
+        this.log("Reading currentTurnEndsAt");
 
         // Get the new turn end time
         const currentTurnEndsAt = await publicClient.readContract({
@@ -227,154 +216,19 @@ export class BattleOperator {
           functionName: 'currentTurnEndsAt'
         }) as bigint;
 
-        this.opLog("Scheduling next check at", currentTurnEndsAt);
+        this.log("Scheduling next check at", currentTurnEndsAt);
 
         // Schedule next check at turn end time
-        await this.state.storage.setAlarm(Number(currentTurnEndsAt) * 1000 + 500);
+        return Number(currentTurnEndsAt) * 1000 + 500;
       } else {
-        this.opLog("Turn has not ended, checking again in 1 second");
+        this.log("Turn has not ended, checking again in 1 second");
         // Check again in 1 second
-        await this.state.storage.setAlarm(Date.now() + 1000);
+        return Date.now() + 1000;
       }
     } catch (error) {
       console.error("Error in checkAndAdvanceTurn:", error);
       // On error, try again in 5 seconds
-      await this.state.storage.setAlarm(Date.now() + 5000);
-    }
-
-    return true;
-  }
-
-  private async setupWebSocketConnection(): Promise<void> {
-    if (!this.gameAddress) {
-      this.opError("Cannot setup WebSocket without gameAddress");
-      return;
-    }
-
-    try {
-      // Find EndedTurnEvent in the ABI
-      const endedTurnEvent = (BattleABI as any[]).find(
-        item => item.type === 'event' && item.name === 'EndedTurnEvent'
-      );
-
-      if (!endedTurnEvent) {
-        throw new Error("EndedTurnEvent not found in Battle ABI");
-      }
-
-      this.opLog("Found EndedTurnEvent in ABI:", endedTurnEvent);
-
-      // Create WebSocket client
-      this.wsClient = createPublicClient({
-        chain: arbitrum,
-        transport: webSocket(this.env.ETH_RPC_URL)
-      });
-
-      // Listen for EndedTurnEvent from this specific Battle using the ABI event
-      const unwatch = this.wsClient.watchEvent({
-        address: this.gameAddress as `0x${string}`,
-        event: endedTurnEvent,
-        onLogs: (logs: any[]) => {
-          for (const log of logs) {
-            this.opLog("EndedTurnEvent received:", {
-              turn: log.args.turn?.toString(),
-              player: log.args.player
-            });
-            
-            // Trigger turn advancement check
-            this.checkAndAdvanceTurn();
-          }
-        }
-      });
-
-      // Store the unwatch function for cleanup
-      this.wsUnwatch = unwatch;
-      
-      this.opLog("WebSocket connection established for Battle events");
-      
-    } catch (error) {
-      this.opError("Error setting up WebSocket connection:", error);
-      throw error; // Re-throw to prevent silent failures
-    }
-  }
-
-  async fetch(request: Request): Promise<Response> {
-    const url = new URL(request.url);
-
-    if (url.pathname === "/start") {
-      const requestedGameAddress = url.searchParams.get("gameAddress");
-
-      if (!requestedGameAddress) {
-        return new Response("Missing gameAddress", { status: 400 });
-      }
-
-      // Get stored game address
-      const storedGameAddress = await this.state.storage.get("gameAddress") as string;
-      
-      // Set up new connection
-      this.gameAddress = requestedGameAddress;
-      await this.state.storage.put("gameAddress", this.gameAddress);
-
-      let hasError = false;
-      let errorMessage = "";
-
-      // Setup WebSocket connection if not already connected
-      if (!this.wsClient) {
-        try {
-          // Clean up any existing connection
-          await this.cleanupWebSocketConnection();
-          
-          // Setup WebSocket connection
-          await this.setupWebSocketConnection();
-          this.opLog("WebSocket connection established");
-        } catch (error) {
-          this.opError("Failed to setup WebSocket connection:", error);
-          hasError = true;
-          errorMessage += `WebSocket error: ${error}; `;
-        }
-      } else {
-        // this.opLog("WebSocket connection already exists");
-      }
-
-      // Setup alarm if none exists or if existing alarm is in the past
-      try {
-        const currentAlarm = await this.state.storage.getAlarm();
-        const currentTime = Date.now();
-        
-        if (currentAlarm === null || currentAlarm < currentTime) {
-          this.state.storage.setAlarm(currentTime + 5000);
-          this.opLog("Alarm scheduled for periodic checks");
-        } else {
-          // this.opLog("Alarm already scheduled");
-        }
-      } catch (error) {
-        this.opError("Failed to setup alarm:", error);
-        hasError = true;
-        errorMessage += `Alarm error: ${error}; `;
-      }
-
-      if (hasError) {
-        return new Response(`BattleOperator started with errors: ${errorMessage}`, { status: 207 });
-      }
-      
-      return new Response("BattleOperator started");
-    }
-
-    return new Response("Not found", { status: 404 });
-  }
-
-  async alarm(): Promise<void> {
-    try {
-      this.opLog("BattleOperator alarm triggered");
-      // Perform periodic check of battle state and turn advancement
-      if (!await this.checkAndAdvanceTurn()) {
-        // Game is over or we don't need to continue, clean up resources
-        await this.state.storage.deleteAll();
-        this.opLog("Operator resources released - game ended or no longer needed");
-      }
-    } catch (error) {
-      this.opError("Error in alarm:", error);
-      // Continue with next alarm even on error
-      this.state.storage.setAlarm(Date.now() + 5000);
+      return Date.now() + 5000;
     }
   }
 }
