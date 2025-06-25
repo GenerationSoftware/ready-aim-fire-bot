@@ -22,28 +22,38 @@ export function createGraphQLClient(env: Env): GraphQLClient {
         throw new Error(`GraphQL request failed: ${response.status} ${response.statusText}`);
       }
 
-      const result = await response.json();
+      const result = await response.json() as { data?: T; errors?: any[] };
       
       if (result.errors) {
         throw new Error(`GraphQL query error: ${JSON.stringify(result.errors)}`);
       }
 
-      return result.data;
+      return result.data as T;
     },
   };
 }
 
 // GraphQL types based on schema introspection
+export enum PartyState {
+  CREATED,
+  DOOR_CHOSEN,
+  IN_ROOM,
+  ESCAPED,
+  CANCELLED
+}
+
 export interface Party {
   id: string;
   zigguratAddress: string;
   partyId: string;
-  character: string;
+  leader: string;
   isPublic: boolean;
-  isStarted: boolean;
-  isEnded: boolean;
+  inviter: string;
+  roomHash: string;
+  chosenDoor: string;
+  state: PartyState;
   createdAt: string;
-  startedAt: string;
+  startedAt: string | null;
   endedAt: string | null;
 }
 
@@ -96,17 +106,19 @@ export interface Ziggurat {
 // Query helpers
 export const GraphQLQueries = {
   // Ziggurat queries
-  getPartiesByZiggurat: `
+  getPartiesByZigguratWithStateDoorChosen: `
     query GetPartiesByZiggurat($zigguratAddress: String!) {
-      partys(where: { zigguratAddress: $zigguratAddress, isEnded: false }) {
+      partys(where: { zigguratAddress: $zigguratAddress, state: "1" }) {
         items {
           id
           zigguratAddress
           partyId
-          character
+          leader
           isPublic
-          isStarted
-          isEnded
+          inviter
+          roomHash
+          chosenDoor
+          state
           createdAt
           startedAt
           endedAt
@@ -125,6 +137,46 @@ export const GraphQLQueries = {
           parentRoomHash
           parentDoorIndex
           revealedAt
+        }
+      }
+    }
+  `,
+
+  getSpecificZigguratRoom: `
+    query GetSpecificZigguratRoom($zigguratAddress: String!, $parentRoomHash: String!, $parentDoorIndex: BigInt!) {
+      zigguratRooms(where: { 
+        zigguratAddress: $zigguratAddress, 
+        parentRoomHash: $parentRoomHash, 
+        parentDoorIndex: $parentDoorIndex 
+      }) {
+        items {
+          id
+          zigguratAddress
+          roomHash
+          parentRoomHash
+          parentDoorIndex
+          revealedAt
+        }
+      }
+    }
+  `,
+
+  getSpecificPartyByZiggurat: `
+    query GetSpecificPartyByZiggurat($zigguratAddress: String!, $partyId: String!) {
+      partys(where: { zigguratAddress: $zigguratAddress, partyId: $partyId, state: "1" }) {
+        items {
+          id
+          zigguratAddress
+          partyId
+          leader
+          isPublic
+          inviter
+          roomHash
+          chosenDoor
+          state
+          createdAt
+          startedAt
+          endedAt
         }
       }
     }

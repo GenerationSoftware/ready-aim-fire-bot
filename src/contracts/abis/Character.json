@@ -329,6 +329,31 @@
   },
   {
     "type": "event",
+    "name": "ActivatedCard",
+    "inputs": [
+      {
+        "name": "cardId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "deck",
+        "type": "address",
+        "indexed": true,
+        "internalType": "contract IDeck"
+      },
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "OperatorTransferred",
     "inputs": [
       {

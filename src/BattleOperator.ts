@@ -306,7 +306,9 @@ export class BattleOperator {
         console.error("Error connecting to WebSocket", error);
       }
 
-      await this.state.storage.setAlarm(Date.now() + 5000);
+      if (await this.state.storage.getAlarm() == null) {
+        await this.state.storage.setAlarm(Date.now() + 5000);
+      }
       return new Response("Operator started");
     }
 

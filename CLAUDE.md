@@ -68,7 +68,7 @@ The system primarily uses a GraphQL indexer at `GRAPHQL_URL` for efficient block
 **Key GraphQL Queries:**
 - `getBattlesWithOperator` - Find battles where address is operator
 - `getMonsters` - Find battle players where address is character
-- `getPartiesByZiggurat` - Find active parties in ziggurat dungeons
+- `getPartiesByZigguratWithStateDoorChosen` - Find active parties in ziggurat dungeons
 - `getZigguratRooms` - Get room revelation status and structure
 - `getBattlePlayers` - Get players in specific battles
 - `getBattleTurns` - Get turn history and metadata

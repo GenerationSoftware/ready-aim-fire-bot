@@ -6,7 +6,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
 import { forwardTransaction } from "./forwarder/forwardTransaction";
 import { CONTRACT_ADDRESSES } from "./utils/deployments";
-import { createGraphQLClient, GraphQLQueries, type Battle, type BattlePlayer, type Party } from "./utils/graphql";
+import { createGraphQLClient, GraphQLQueries, type Battle, type BattlePlayer, type Party, type Character, type Ziggurat } from "./utils/graphql";
 
 export class OperatorManager {
     state: DurableObjectState;

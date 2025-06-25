@@ -376,7 +376,10 @@ export class CharacterOperator {
       } catch (error) {
         console.error("Error executing character logic", error);
       }
-      await this.state.storage.setAlarm(Date.now() + 5000);
+
+      if (await this.state.storage.getAlarm() == null) {
+        await this.state.storage.setAlarm(Date.now() + 5000);
+      }
       return new Response("CharacterOperator started");
     }
 

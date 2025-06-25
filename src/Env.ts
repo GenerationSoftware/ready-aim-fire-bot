@@ -1,5 +1,4 @@
 export interface Env {
-	ETH_WS_RPC_URL: string;
 	ETH_RPC_URL: string;
 	OWNER_ADDRESS: string;
 	OPERATOR_ADDRESS: string;
