@@ -4,7 +4,7 @@ import { createPublicClient, createWalletClient, http, encodeFunctionData, type 
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
 import { forwardTransaction } from "./forwarder/forwardTransaction";
-import { createGraphQLClient, GraphQLQueries, type Battle, type BattleTurn } from "./utils/graphql";
+import { createGraphQLClient, GraphQLQueries, type Battle } from "./utils/graphql";
 import { Operator, type EventSubscription } from "./Operator";
 
 export class BattleOperator extends Operator {
@@ -141,20 +141,24 @@ export class BattleOperator extends Operator {
       if (gameState == 2n && isTurnOver) {
         this.log("Turn has ended, advancing to next turn");
         
-        // Get the latest turn information from GraphQL for context
-        const turnsResult = await graphqlClient.query<{battleTurns: {items: BattleTurn[]}}>(GraphQLQueries.getBattleTurns, {
-          battleId: gameAddress.toLowerCase()
-        });
+        // Get current turn information from contract
+        const currentTurn = await publicClient.readContract({
+          address: gameAddress as `0x${string}`,
+          abi: BattleABI as Abi,
+          functionName: 'currentTurn'
+        }) as bigint;
         
-        if (turnsResult.battleTurns.items.length > 0) {
-          const latestTurn = turnsResult.battleTurns.items[0];
-          this.log("Latest turn from GraphQL:", {
-            turn: latestTurn.turn,
-            startedAt: latestTurn.startedAt,
-            duration: latestTurn.duration,
-            endTurnCount: latestTurn.endTurnCount
-          });
-        }
+        const currentTurnEndsAt = await publicClient.readContract({
+          address: gameAddress as `0x${string}`,
+          abi: BattleABI as Abi,
+          functionName: 'currentTurnEndsAt'
+        }) as bigint;
+        
+        this.log("Current turn information from contract:", {
+          turn: currentTurn.toString(),
+          endsAt: currentTurnEndsAt.toString(),
+          endsAtDate: new Date(Number(currentTurnEndsAt) * 1000).toISOString()
+        });
         
         // Create wallet client for sending transactions
         const account = privateKeyToAccount(this.env.OPERATOR_PRIVATE_KEY as `0x${string}`);
@@ -208,19 +212,19 @@ export class BattleOperator extends Operator {
           return Date.now() + 1000;
         }
 
-        this.log("Reading currentTurnEndsAt");
+        this.log("Reading new turn end time");
 
-        // Get the new turn end time
-        const currentTurnEndsAt = await publicClient.readContract({
+        // Get the new turn end time after nextTurn() was called
+        const newTurnEndsAt = await publicClient.readContract({
           address: gameAddress as `0x${string}`,
           abi: BattleABI as Abi,
           functionName: 'currentTurnEndsAt'
         }) as bigint;
 
-        this.log("Scheduling next check at", currentTurnEndsAt);
+        this.log("Scheduling next check at", newTurnEndsAt);
 
         // Schedule next check at turn end time
-        return Number(currentTurnEndsAt) * 1000 + 500;
+        return Number(newTurnEndsAt) * 1000 + 500;
       } else {
         this.log("Turn has not ended, checking again in 1 second");
         // Check again in 1 second

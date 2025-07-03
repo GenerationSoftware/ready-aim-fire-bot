@@ -352,7 +352,7 @@ export class CharacterOperator extends Operator {
     return true;
   }
 
-  async fetch(request: Request): Response {
+  async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
     if (url.pathname === "/start") {
