@@ -14,24 +14,35 @@ export class OperatorManager {
     }
 
     private async checkCharacterOperators() {
-      // Use GraphQL to find battle players where our operator is a character
+      // Use GraphQL to find characters where our address is the operator, and get their battle players
       const graphqlClient = createGraphQLClient(this.env);
       const result = await graphqlClient.query<{characters: {items: Character[]}}>(GraphQLQueries.getMonsters, {
-        owner: this.env.OWNER_ADDRESS.toLowerCase(),
         operator: this.env.OPERATOR_ADDRESS.toLowerCase()
       });
 
-      console.log("Found monster characters:", result.characters.items.length);
+      let totalBattlePlayers = 0;
       
-      // Check each battle player
-      for (const battlePlayer of result.characters.items) {
-        const battle = battlePlayer.battle;
+      // Check each character and their battle players
+      for (const character of result.characters.items) {
+        if (!character.battlePlayers?.items) continue;
         
-        // Start character operator
-        const id = this.env.CHARACTER_OPERATOR.idFromName(battlePlayer.playerId);
-        const characterOperator = this.env.CHARACTER_OPERATOR.get(id);
-        characterOperator.fetch(new Request(`http://character-operator/start?gameAddress=${battle.id}&playerId=${battlePlayer.playerId}&teamA=${battlePlayer.teamA}`));
+        for (const battlePlayer of character.battlePlayers.items) {
+          totalBattlePlayers++;
+          const battle = battlePlayer.battle;
+          
+          // Skip if battle hasn't started
+          if (!battle || !battle.gameStartedAt) {
+            continue;
+          }
+          
+          // Start character operator
+          const id = this.env.CHARACTER_OPERATOR.idFromName(battlePlayer.playerId.toString());
+          const characterOperator = this.env.CHARACTER_OPERATOR.get(id);
+          characterOperator.fetch(new Request(`http://character-operator/start?gameAddress=${battle.id}&playerId=${battlePlayer.playerId}&teamA=${battlePlayer.teamA}`));
+        }
       }
+      
+      console.log("Found monster characters:", result.characters.items.length, "with total battle players:", totalBattlePlayers);
     }
 
     private async checkBattleOperators() {

@@ -126,6 +126,44 @@ The system uses a hybrid approach for blockchain data:
    - Individual operators (Character/Battle/Ziggurat) maintain event scanning fallbacks
    - Simplified architecture with single discovery mechanism
 
+### GraphQL Schema Reference
+
+The GraphQL indexer at `GRAPHQL_URL` provides the following main entity types:
+
+**Core Game Entities:**
+- **ziggurat** - Dungeon instance with rooms, parties, and configuration
+- **party** - Player group in ziggurat with state tracking (CREATED, DOOR_CHOSEN, IN_ROOM, ESCAPED, CANCELLED)
+- **partyMember** - Individual character in a party
+- **zigguratRoom** - Dungeon room with parent/child relationships and revelation status
+- **battle** - Game instance with turns, players, and game state
+- **battlePlayer** - Player participation in battle with location, team, and elimination status
+- **character** - Player character with owner, operator, and game associations
+- **monster** - Character registered as monster with health tracking
+
+**Game Action Tracking:**
+- **playerAction** - Battle actions with card usage and parameters
+- **characterCard** - Character's card collection with activation status
+- **basicDeckCard** - Card ownership and transfer history
+
+**Configuration & Metadata:**
+- **actionDefinition** - Card action definitions with energy costs
+- **actionEffect** - Effects associated with action definitions
+- **deckConfiguration** - Deck setup and rules
+- **playerStatsStorage** - Player statistics storage configuration
+
+**Key Relationships:**
+- Characters have battlePlayers, partyMembers, and cards
+- Battles have players and actions
+- Parties have members and belong to ziggurats
+- ZigguratRooms form hierarchical tree structures
+- All entities track creation/modification timestamps
+
+**Query Patterns:**
+- Use `where` filters for targeted queries (e.g., `where: { operator: $address }`)
+- Pagination via `limit`, `orderBy`, `orderDirection`
+- Nested relationship queries (e.g., `battle { players { character } }`)
+- String matching with `_starts_with`, `_not`, `_gt`, etc.
+
 ### Common Issues
 
 - **GraphQL Connection Issues**: OperatorManager will fail without GraphQL indexer

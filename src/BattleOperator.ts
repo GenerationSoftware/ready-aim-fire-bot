@@ -168,10 +168,14 @@ export class BattleOperator extends Operator {
           transport: http(this.env.ETH_RPC_URL)
         });
 
+        // Generate a random number for nextTurn
+        const randomNumber = BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER));
+        
         // Encode the nextTurn function call
         const data = encodeFunctionData({
           abi: BattleABI as Abi,
-          functionName: 'nextTurn'
+          functionName: 'nextTurn',
+          args: [randomNumber]
         });
 
         this.log("Calling nextTurn for game ", gameAddress);

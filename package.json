@@ -7,6 +7,8 @@
 		"dev": "wrangler dev --port 8888",
 		"start": "wrangler dev --port 8888",
 		"test": "vitest",
+		"test:run": "vitest --run",
+		"test:watch": "vitest",
 		"cf-typegen": "wrangler types"
 	},
 	"devDependencies": {

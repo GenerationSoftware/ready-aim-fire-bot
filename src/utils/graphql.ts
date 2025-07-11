@@ -81,8 +81,10 @@ export interface Battle {
 export interface BattlePlayer {
   id: string;
   playerId: string;
-  character: string;
+  character: Character;
   teamA: boolean;
+  eliminated: boolean;
+  battle: Battle;
 }
 
 export interface BattleTurn {
@@ -98,9 +100,9 @@ export interface Character {
   name: string;
   owner: string;
   operator: string;
-  playerId: string;
-  teamA: boolean;
-  battle: Battle;
+  battlePlayers?: {
+    items: BattlePlayer[];
+  };
 }
 
 export interface Ziggurat {
@@ -207,8 +209,13 @@ export const GraphQLQueries = {
         items {
           id
           playerId
-          character
           teamA
+          character {
+            id
+            name
+            owner
+            operator
+          }
         }
       }
     }
@@ -261,13 +268,28 @@ export const GraphQLQueries = {
   `,
 
   getMonsters: `
-    query GetMonsters($owner: String!, $operator: String!) {
-      characters(where: { owner: $owner, operator: $operator }) {
+    query GetMonsters($operator: String!) {
+      characters(where: { operator: $operator }) {
         items {
           id
           name
           owner
           operator
+          battlePlayers {
+            items {
+              id
+              playerId
+              teamA
+              eliminated
+              battle {
+                id
+                gameStartedAt
+                currentTurn
+                teamAStarts
+                turnDuration
+              }
+            }
+          }
         }
       }
     }
