@@ -39,6 +39,24 @@ export async function signForwardRequest(
 		verifyingContract
 	};
 
+	console.log('EIP712 Domain:', {
+		name,
+		version,
+		chainId: chainId.toString(),
+		verifyingContract,
+		forwarderAddress
+	});
+
+	console.log('Signing request:', {
+		from: request.from,
+		to: request.to,
+		value: request.value.toString(),
+		gas: request.gas.toString(),
+		nonce: request.nonce.toString(),
+		deadline: request.deadline.toString(),
+		dataLength: request.data.length
+	});
+
 	const types = {
 		ForwardRequest: [
 			{ name: 'from', type: 'address' },

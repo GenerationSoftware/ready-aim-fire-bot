@@ -49,140 +49,93 @@ export abstract class Operator {
     });
   }
 
-  private async restoreEventRegistration(): Promise<void> {
+  private async restoreConnection(): Promise<void> {
     try {
-      // Check if we have any stored parameters (indicates active operator)
+      // Check if we have any stored parameters (indicates active connection)
       const storedKeys = await this.state.storage.list();
       const hasStoredParams = storedKeys.size > 0;
       
-      if (hasStoredParams && !this.isRegisteredWithAggregator) {
-        this.log("Restoring event registration with EventAggregator");
-        await this.registerWithEventAggregator();
+      if (hasStoredParams && !this.wsClient) {
+        this.log("Restoring WebSocket connection with stored parameters");
+        await this.setupWebSocketConnection();
       }
     } catch (error) {
-      this.error("Error restoring event registration:", error);
+      this.error("Error restoring WebSocket connection:", error);
     }
   }
 
-  private async registerWithEventAggregator(): Promise<void> {
+  private async cleanupWebSocketConnection(): Promise<void> {
+    try {
+      if (this.wsUnwatch) {
+        this.wsUnwatch();
+        this.wsUnwatch = null;
+      }
+      this.wsClient = null;
+    } catch (error) {
+      this.error("Error cleaning up WebSocket connection:", error);
+    }
+  }
+
+  private async setupWebSocketConnection(): Promise<void> {
     try {
       const subscriptions = await this.getEventSubscriptions();
       
       if (subscriptions.length === 0) {
-        this.log("No event subscriptions defined, skipping EventAggregator registration");
+        this.log("No event subscriptions defined, skipping WebSocket setup");
         return;
       }
 
-      // Store event handlers
-      this.eventHandlers.clear();
+      // Create WebSocket client
+      this.wsClient = createPublicClient({
+        chain: arbitrum,
+        transport: webSocket(this.env.ETH_RPC_URL)
+      });
+
+      // Set up event listeners for each subscription
+      const unwatchFunctions: (() => void)[] = [];
+
       for (const subscription of subscriptions) {
-        const key = `${subscription.eventName}-${subscription.address || 'all'}`;
-        this.eventHandlers.set(key, subscription.onEvent);
+        // Find the event in the ABI
+        const eventDef = subscription.abi.find(
+          item => item.type === 'event' && item.name === subscription.eventName
+        );
+
+        if (!eventDef) {
+          throw new Error(`${subscription.eventName} not found in provided ABI`);
+        }
+
+        this.log(`Found ${subscription.eventName} in ABI:`, eventDef);
+
+        // Listen for events from this specific contract
+        const event = {
+          event: eventDef,
+          onLogs: (logs: any[]) => {
+            this.log(`${subscription.eventName} received:`, logs.length, "events");
+            subscription.onEvent(logs);
+          }
+        } as any;
+        if (subscription.address) {
+          event.address = subscription.address as `0x${string}`;
+          this.log(`Watching ${subscription.eventName} on address: ${subscription.address}`);
+        } else {
+          this.log(`Watching ${subscription.eventName} on ALL addresses`);
+        }
+        const unwatch = this.wsClient.watchEvent(event);
+
+        unwatchFunctions.push(unwatch);
       }
 
-      // Get operator ID based on stored parameters
-      const operatorId = await this.getOperatorId();
-      if (!operatorId) {
-        this.error("Cannot register with EventAggregator: no operator ID");
-        return;
-      }
-
-      // Check if EVENT_AGGREGATOR binding exists
-      if (!this.env.EVENT_AGGREGATOR) {
-        this.error("EVENT_AGGREGATOR binding not found in environment");
-        return;
-      }
-
-      // Register with EventAggregator
-      const aggregator = this.env.EVENT_AGGREGATOR.get(
-        this.env.EVENT_AGGREGATOR.idFromName("global")
-      );
-
-      const registration = {
-        operatorId,
-        namespace: this.getDurableObjectNamespace(),
-        instanceId: operatorId, // The operatorId is used as the instance ID
-        events: subscriptions.map(sub => ({
-          eventName: sub.eventName,
-          address: sub.address,
-          abi: sub.abi
-        }))
+      // Store a combined unwatch function
+      this.wsUnwatch = () => {
+        unwatchFunctions.forEach(unwatch => unwatch());
       };
-
-      const response = await aggregator.fetch(
-        new Request('http://aggregator/register', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(registration)
-        })
-      );
-
-      if (response.ok) {
-        this.isRegisteredWithAggregator = true;
-        this.log("Successfully registered with EventAggregator");
-      } else {
-        const error = await response.text();
-        this.error("Failed to register with EventAggregator:", error);
-      }
+      
+      this.log("WebSocket connection established with", subscriptions.length, "event subscriptions");
+      
     } catch (error) {
-      this.error("Error registering with EventAggregator:", error);
-      throw error;
+      this.error("Error setting up WebSocket connection:", error);
+      throw error; // Re-throw to prevent silent failures
     }
-  }
-
-  private async unregisterFromEventAggregator(): Promise<void> {
-    try {
-      if (!this.isRegisteredWithAggregator) {
-        return;
-      }
-
-      const operatorId = await this.getOperatorId();
-      if (!operatorId) {
-        return;
-      }
-
-      // Check if EVENT_AGGREGATOR binding exists
-      if (!this.env.EVENT_AGGREGATOR) {
-        return;
-      }
-
-      const aggregator = this.env.EVENT_AGGREGATOR.get(
-        this.env.EVENT_AGGREGATOR.idFromName("global")
-      );
-
-      await aggregator.fetch(
-        new Request('http://aggregator/unregister', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ operatorId })
-        })
-      );
-
-      this.isRegisteredWithAggregator = false;
-      this.eventHandlers.clear();
-      this.log("Unregistered from EventAggregator");
-    } catch (error) {
-      this.error("Error unregistering from EventAggregator:", error);
-    }
-  }
-
-  // Get a unique ID for this operator instance
-  protected async getOperatorId(): Promise<string | null> {
-    // Default implementation - subclasses should override for better IDs
-    const params = await this.state.storage.list();
-    const values: string[] = [];
-    for (const [key, value] of params) {
-      if (typeof value === 'string') {
-        values.push(value);
-      }
-    }
-    return values.length > 0 ? values.join('-') : null;
-  }
-
-  // Get the Durable Object namespace name
-  protected getDurableObjectNamespace(): string {
-    // Subclasses should override this
-    return this.constructor.name.toUpperCase();
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -210,18 +163,22 @@ export abstract class Operator {
       let hasError = false;
       let errorMessage = "";
 
-      // Setup EventAggregator registration if not already registered
-      if (!this.isRegisteredWithAggregator) {
+      // Setup WebSocket connection if not already connected
+      if (!this.wsClient) {
         try {
-          await this.registerWithEventAggregator();
-          this.log("Event registration established");
+          // Clean up any existing connection
+          await this.cleanupWebSocketConnection();
+          
+          // Setup WebSocket connection
+          await this.setupWebSocketConnection();
+          this.log("WebSocket connection established");
         } catch (error) {
-          this.error("Failed to register with EventAggregator:", error);
+          this.error("Failed to setup WebSocket connection:", error);
           hasError = true;
-          errorMessage += `Event registration error: ${error}; `;
+          errorMessage += `WebSocket error: ${error}; `;
         }
       } else {
-        this.log("Already registered with EventAggregator");
+        this.log("WebSocket connection already exists");
       }
 
       // Setup alarm if none exists or if existing alarm is in the past
@@ -248,24 +205,6 @@ export abstract class Operator {
       return new Response(`${this.constructor.name} started with parameters: ${searchParams.map(([k,v]) => `${k}=${v}`).join(', ')}`);
     }
 
-    if (url.pathname === "/events" && request.method === "POST") {
-      try {
-        const { eventName, logs } = await request.json() as { eventName: string; logs: any[] };
-        
-        // Find matching handlers
-        for (const [key, handler] of this.eventHandlers) {
-          if (key.startsWith(eventName)) {
-            await handler(logs);
-          }
-        }
-        
-        return new Response("Events processed", { status: 200 });
-      } catch (error) {
-        this.error("Error processing events:", error);
-        return new Response("Error processing events", { status: 500 });
-      }
-    }
-
     if (url.pathname === "/status") {
       // Get all stored parameters
       const storedParams: Record<string, any> = {};
@@ -276,15 +215,27 @@ export abstract class Operator {
       }
       
       // Check if operator is running
-      const hasEventRegistration = this.isRegisteredWithAggregator;
+      const hasWebSocket = !!this.wsClient;
+      let isWebSocketOpen = false;
+      if (hasWebSocket && this.wsClient) {
+        // Check WebSocket readyState: 0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED
+        const transport = this.wsClient.transport as any;
+        isWebSocketOpen = transport?.socket?.readyState === 1 || 
+                         transport?.readyState === 1 || 
+                         false; // Default to false if we can't determine
+      }
+
+      console.log("HAZZZZZZZ WEBSOCKET: ", hasWebSocket)
+      
       const alarm = await this.state.storage.getAlarm();
       const hasAlarm = alarm !== null && alarm > Date.now();
       const lastCheckTime = storedParams.lastCheckTime || 0;
       
       return new Response(JSON.stringify({
-        running: hasEventRegistration && hasAlarm,
+        running: isWebSocketOpen && hasAlarm,
         operatorType: this.constructor.name,
-        hasEventRegistration,
+        hasWebSocket,
+        isWebSocketOpen,
         hasAlarm,
         alarm,
         lastCheckTime,
@@ -309,7 +260,7 @@ export abstract class Operator {
       
       if (nextAlarmTime === 0) {
         // Operation is complete, clean up resources
-        await this.unregisterFromEventAggregator();
+        await this.cleanupWebSocketConnection();
         await this.state.storage.deleteAll();
         this.log("Operator resources released - operation completed");
       } else {

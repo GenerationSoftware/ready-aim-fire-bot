@@ -10,4 +10,5 @@ export interface Env {
 	CHARACTER_OPERATOR: DurableObjectNamespace;
 	BATTLE_OPERATOR: DurableObjectNamespace;
 	ZIGGURAT_OPERATOR: DurableObjectNamespace;
+	EVENT_AGGREGATOR: DurableObjectNamespace;
 }

@@ -18,8 +18,52 @@ export class CharacterOperator extends Operator {
     super(state, env);
   }
 
+  protected async getOperatorId(): Promise<string | null> {
+    const gameAddress = await this.state.storage.get("gameAddress");
+    const playerId = await this.state.storage.get("playerId");
+    return gameAddress && playerId ? `${gameAddress}-${playerId}` : null;
+  }
+
+  protected getDurableObjectNamespace(): string {
+    return "CHARACTER_OPERATOR";
+  }
+
+  protected async validateStartParameters(params: URLSearchParams): Promise<string | null> {
+    const gameAddress = params.get("gameAddress");
+    const playerId = params.get("playerId");
+    const teamA = params.get("teamA");
+    
+    if (!gameAddress || !playerId || teamA === null) {
+      return "Missing required parameters: gameAddress, playerId, and teamA are all required";
+    }
+    
+    return null;
+  }
+
   protected async getEventSubscriptions(): Promise<EventSubscription[]> {
-    return [];
+    const storedGameAddress = await this.state.storage.get("gameAddress");
+    return [
+      {
+          eventName: "EndedTurnEvent",
+          abi: BattleABI as any[],
+          address: storedGameAddress as `0x${string}`,
+          onEvent: async (logs: any[]) => {
+            this.log(`EndedTurnEvent triggered with ${logs.length} logs`);
+            for (const log of logs) {
+              this.log("EndedTurnEvent details:", {
+                address: log.address,
+                turn: log.args?.turn?.toString(),
+                player: log.args?.player,
+                transactionHash: log.transactionHash,
+                blockNumber: log.blockNumber
+              });
+              
+              // Trigger turn advancement check
+              await this.alarm();
+            }
+          }
+      }
+    ];
   }
 
   protected async performPeriodicCheck(): Promise<number> {
@@ -45,15 +89,15 @@ export class CharacterOperator extends Operator {
     this.playerId = storedPlayerId;
     this.teamA = storedTeamA === true || storedTeamA === "true";
 
-    const characterLog = (message: string, ...args: any[]) => {
-      console.log({
-        playerId: this.playerId,
-        message,
-        arguments: args
-      }, { origin: "CHARACTEROPERATOR" });
+    this.log = (message: string, ...args: any[]) => {
+      // console.log({
+      //   playerId: this.playerId,
+      //   message,
+      //   arguments: args
+      // }, { origin: "CHARACTEROPERATOR" });
     };
 
-    characterLog('executeBotLogic', { gameAddress: this.gameAddress, playerId: this.playerId, teamA: this.teamA });
+    this.log('executeBotLogic', { gameAddress: this.gameAddress, playerId: this.playerId, teamA: this.teamA });
 
     // Create public client
     const publicClient = createPublicClient({
@@ -68,9 +112,19 @@ export class CharacterOperator extends Operator {
       
       const battle = battleResult.battles.items.find(b => b.id.toLowerCase() === this.gameAddress!.toLowerCase());
       
-      if (!battle || !battle.gameStartedAt) {
-        characterLog("Game not started yet");
-        return true;
+      if (!battle) {
+        this.log("Battle not found for game address", this.gameAddress);
+        return false;
+      }
+
+      if (battle.winner != null) {
+        this.log("Battle already finished with winner", battle.winner, "for game address", this.gameAddress);
+        return false; // No need to continue if the battle is already finished
+      }
+
+      if (!battle.gameStartedAt) {
+        this.log("Battle has not started yet", battle.id);
+        return true; // Wait for the next check
       }
 
       // Check if it's our team's turn
@@ -80,13 +134,13 @@ export class CharacterOperator extends Operator {
         functionName: 'isTeamATurn'
       }) as boolean;
 
-      characterLog(`Turn check: isTeamATurn=${isTeamATurn} (${typeof isTeamATurn}), botTeamA=${this.teamA} (${typeof this.teamA}), match=${isTeamATurn === this.teamA}`);
+      this.log(`Turn check: isTeamATurn=${isTeamATurn} (${typeof isTeamATurn}), botTeamA=${this.teamA} (${typeof this.teamA}), match=${isTeamATurn === this.teamA}`);
       
       if (isTeamATurn === this.teamA) {
-        characterLog("It's our turn to play!");
-        await this.playTurn(publicClient, characterLog);
+        this.log("It's our turn to play!");
+        await this.playTurn(publicClient, this.log);
       } else {
-        characterLog("Not time to play yet");
+        this.log("Not time to play yet");
       }
 
       return true;
@@ -96,10 +150,21 @@ export class CharacterOperator extends Operator {
     }
   }
 
-  private async playTurn(publicClient: any, characterLog: (message: string, ...args: any[]) => void) {
+  private async playTurn(publicClient: any) {
     const playerId = BigInt(this.playerId!);
     const gameAddress = this.gameAddress as `0x${string}`;
 
+    // First check if the game is still active
+    const winner = await publicClient.readContract({
+      address: gameAddress,
+      abi: BattleABI as Abi,
+      functionName: 'winner'
+    }) as any;
+
+    if (winner !== 0n) {
+      this.log('Game has ended with winner:', winner);
+      return;
+    }
 
     // Get current energy
     const playerStats = await publicClient.readContract({
@@ -111,10 +176,10 @@ export class CharacterOperator extends Operator {
 
     // Get energy using the utility function
     const statsBytes = playerStats.stats as string;
-    characterLog('Raw player stats:', playerStats);
+    this.log('Raw player stats:', playerStats);
     
     let currentEnergy = getPlayerEnergy(statsBytes);
-    characterLog('Current energy (from utility):', currentEnergy, 'typeof:', typeof currentEnergy);
+    this.log('Current energy (from utility):', currentEnergy, 'typeof:', typeof currentEnergy);
 
     // Get player's card pile state
     const cardPileState = await publicClient.readContract({
@@ -125,20 +190,37 @@ export class CharacterOperator extends Operator {
     }) as any;
 
     const handBits = BigInt(cardPileState.hand);
-    characterLog('Hand bits:', handBits.toString(16));
+    this.log('Hand bits:', handBits.toString(16));
     
     // Convert hand bits to array of card indices using utility function
     let handCards = cardPileBitsToArray(handBits);
     
-    characterLog('Hand cards:', handCards);
+    this.log('Hand cards:', handCards);
 
     // Play cards while we have energy
     let actionsThisTurn = 0;
     const maxActionsPerTurn = 5; // Prevent infinite loops
 
-    characterLog('Starting card play loop:', { currentEnergy, handCardsLength: handCards.length, actionsThisTurn, maxActionsPerTurn });
+    this.log('Starting card play loop:', { currentEnergy, handCardsLength: handCards.length, actionsThisTurn, maxActionsPerTurn });
     
     while (currentEnergy > 0n && handCards.length > 0 && actionsThisTurn < maxActionsPerTurn) {
+      // Re-read hand state before each card play to ensure we have latest state
+      const freshCardPileState = await publicClient.readContract({
+        address: gameAddress,
+        abi: BattleABI as Abi,
+        functionName: 'getPlayerCardPileState',
+        args: [playerId]
+      }) as any;
+
+      const freshHandBits = BigInt(freshCardPileState.hand);
+      handCards = cardPileBitsToArray(freshHandBits);
+      this.log('Refreshed hand cards:', handCards);
+
+      if (handCards.length === 0) {
+        this.log('No cards in hand after refresh');
+        break;
+      }
+
       // Find the first card we can afford to play
       let playableCardId = -1;
       let playableHandIndex = -1;
@@ -152,7 +234,7 @@ export class CharacterOperator extends Operator {
           args: [playerId, BigInt(i)] // i is the index in the hand, not card ID
         }) as bigint;
 
-        characterLog(`Checking card ${cardId} at hand index ${i}: energy required=${energyRequired}, current energy=${currentEnergy}, affordable=${energyRequired <= currentEnergy}`);
+        this.log(`Checking card ${cardId} at hand index ${i}: energy required=${energyRequired}, current energy=${currentEnergy}, affordable=${energyRequired <= currentEnergy}`);
 
         if (energyRequired <= currentEnergy) {
           playableCardId = cardId;
@@ -162,7 +244,7 @@ export class CharacterOperator extends Operator {
       }
 
       if (playableHandIndex === -1) {
-        characterLog('No playable cards with current energy:', currentEnergy);
+        this.log('No playable cards with current energy:', currentEnergy);
         break;
       }
 
@@ -173,17 +255,14 @@ export class CharacterOperator extends Operator {
         args: [playerId, BigInt(playableHandIndex)]
       }) as bigint;
 
-      characterLog(`Playing card ID ${playableCardId} at hand index ${playableHandIndex}, energy cost: ${energyCost}`);
+      this.log(`Playing card ID ${playableCardId} at hand index ${playableHandIndex}, energy cost: ${energyCost}`);
       
-      // Remove the card from our local hand array since it will be discarded
-      handCards = removeCardFromHand(handCards, playableCardId);
-
       // Get enemy players to target
       const battlePlayers = await this.getBattlePlayers();
       const enemyPlayers = battlePlayers.filter(p => p.teamA !== this.teamA && !p.eliminated);
       
       if (enemyPlayers.length === 0) {
-        characterLog('No enemy players available');
+        this.log('No enemy players available');
         break;
       }
 
@@ -201,45 +280,78 @@ export class CharacterOperator extends Operator {
         args: [playerId, BigInt(playableHandIndex), actionParams]
       });
 
-      const account = privateKeyToAccount(this.env.OPERATOR_PRIVATE_KEY as `0x${string}`);
+      const privateKey = this.env.OPERATOR_PRIVATE_KEY;
+      if (!privateKey) {
+        this.error("OPERATOR_PRIVATE_KEY is not set in environment");
+        throw new Error("Missing OPERATOR_PRIVATE_KEY");
+      }
+      const account = privateKeyToAccount(privateKey as `0x${string}`);
+      this.log("Using operator address:", account.address);
       const walletClient = createWalletClient({
         account,
         chain: arbitrum,
         transport: http(this.env.ETH_RPC_URL)
       });
 
-      const hash = await forwardTransaction(
-        {
-          to: gameAddress,
-          data: actionData,
-          rpcUrl: this.env.ETH_RPC_URL,
-          relayerUrl: this.env.RELAYER_URL
-        },
-        walletClient,
-        this.env.ERC2771_FORWARDER_ADDRESS as `0x${string}`
-      );
+      try {
+        const hash = await forwardTransaction(
+          {
+            to: gameAddress,
+            data: actionData,
+            rpcUrl: this.env.ETH_RPC_URL,
+            relayerUrl: this.env.RELAYER_URL
+          },
+          walletClient,
+          this.env.ERC2771_FORWARDER_ADDRESS as `0x${string}`
+        );
 
-      characterLog(`Played card ID ${playableCardId} at hand index ${playableHandIndex} against player ${randomEnemy.playerId}, tx: ${hash}`);
-      
-      // Wait for transaction and update state
-      await publicClient.waitForTransactionReceipt({ hash });
-      
-      // Get updated energy and hand
-      const updatedStats = await publicClient.readContract({
-        address: gameAddress,
-        abi: BattleABI as Abi,
-        functionName: 'getPlayerStats',
-        args: [playerId]
-      }) as any;
-      
-      // Get updated energy using the utility function
-      const updatedStatsBytes = updatedStats.stats as string;
-      currentEnergy = getPlayerEnergy(updatedStatsBytes);
-      
-      actionsThisTurn++;
-      characterLog('Updated energy:', currentEnergy, 'Hand size:', handCards.length);
-      
-      await this.state.storage.put("lastActionTime", Date.now());
+        this.log(`Played card ID ${playableCardId} at hand index ${playableHandIndex} against player ${randomEnemy.playerId}, tx: ${hash}`);
+        
+        // Wait for transaction and update state
+        await publicClient.waitForTransactionReceipt({ hash });
+        
+        // Get updated energy and hand
+        const updatedStats = await publicClient.readContract({
+          address: gameAddress,
+          abi: BattleABI as Abi,
+          functionName: 'getPlayerStats',
+          args: [playerId]
+        }) as any;
+        
+        // Get updated energy using the utility function
+        const updatedStatsBytes = updatedStats.stats as string;
+        currentEnergy = getPlayerEnergy(updatedStatsBytes);
+        
+        actionsThisTurn++;
+        this.log('Updated energy:', currentEnergy, 'Hand size:', handCards.length);
+        
+        await this.state.storage.put("lastActionTime", Date.now());
+      } catch (error: any) {
+        if (error.message?.includes('CardNotInHandError')) {
+          this.log('Card no longer in hand, continuing with other cards');
+          // Continue to next iteration, don't break
+          continue;
+        } else if (error.message?.includes('GameHasNotStartedError')) {
+          this.log('Game has ended, stopping card play');
+          break;
+        } else {
+          this.log('Error playing card:', error);
+          // Re-throw other errors
+          throw error;
+        }
+      }
+    }
+
+    // Check if game is still active before ending turn
+    const currentWinner = await publicClient.readContract({
+      address: gameAddress,
+      abi: BattleABI as Abi,
+      functionName: 'winner'
+    }) as any;
+
+    if (currentWinner !== 0n) {
+      this.log('Game has ended, skipping end turn');
+      return;
     }
 
     // End turn if we haven't already
@@ -257,7 +369,7 @@ export class CharacterOperator extends Operator {
     }) as boolean;
 
     if (!hasEndedTurn) {
-      characterLog('Ending turn');
+      this.log('Ending turn');
       
       const endTurnData = encodeFunctionData({
         abi: BattleABI as Abi,
@@ -265,26 +377,42 @@ export class CharacterOperator extends Operator {
         args: [playerId]
       });
 
-      const account = privateKeyToAccount(this.env.OPERATOR_PRIVATE_KEY as `0x${string}`);
+      const privateKey = this.env.OPERATOR_PRIVATE_KEY;
+      if (!privateKey) {
+        this.error("OPERATOR_PRIVATE_KEY is not set in environment");
+        throw new Error("Missing OPERATOR_PRIVATE_KEY");
+      }
+      const account = privateKeyToAccount(privateKey as `0x${string}`);
+      this.log("Using operator address:", account.address);
       const walletClient = createWalletClient({
         account,
         chain: arbitrum,
         transport: http(this.env.ETH_RPC_URL)
       });
 
-      const hash = await forwardTransaction(
-        {
-          to: gameAddress,
-          data: endTurnData,
-          rpcUrl: this.env.ETH_RPC_URL,
-          relayerUrl: this.env.RELAYER_URL
-        },
-        walletClient,
-        this.env.ERC2771_FORWARDER_ADDRESS as `0x${string}`
-      );
+      try {
+        const hash = await forwardTransaction(
+          {
+            to: gameAddress,
+            data: endTurnData,
+            rpcUrl: this.env.ETH_RPC_URL,
+            relayerUrl: this.env.RELAYER_URL
+          },
+          walletClient,
+          this.env.ERC2771_FORWARDER_ADDRESS as `0x${string}`
+        );
 
-      characterLog(`Ended turn, tx: ${hash}`);
-      await publicClient.waitForTransactionReceipt({ hash });
+        this.log(`Ended turn, tx: ${hash}`);
+        console.log("CHARACTER OPERATOR ENDED TUUUUUUUURN!!!!!!!!!!!!!!")
+        await publicClient.waitForTransactionReceipt({ hash });
+      } catch (error: any) {
+        if (error.message?.includes('GameHasNotStartedError')) {
+          this.log('Game has ended, cannot end turn');
+        } else {
+          // Re-throw other errors
+          throw error;
+        }
+      }
     }
   }
 
@@ -296,45 +424,4 @@ export class CharacterOperator extends Operator {
     return result.battlePlayers.items;
   }
 
-  async fetch(request: Request): Promise<Response> {
-    const url = new URL(request.url);
-    
-    if (url.pathname === "/start") {
-      const requestedGameAddress = url.searchParams.get("gameAddress");
-      const requestedPlayerId = url.searchParams.get("playerId");
-      const teamAParam = url.searchParams.get("teamA");
-      
-      if (!requestedGameAddress || !requestedPlayerId || teamAParam === null) {
-        return new Response("Missing gameAddress or playerId or teamA", { status: 400 });
-      }
-
-      this.playerId = requestedPlayerId;
-      this.teamA = teamAParam === "true";
-      
-      console.log(`CharacterOperator starting: playerId=${this.playerId}, teamAParam="${teamAParam}", teamA=${this.teamA}`);
-      
-      await this.state.storage.put("playerId", this.playerId);
-      await this.state.storage.put("teamA", this.teamA);
-      await this.state.storage.put("lastRun", Date.now());
-      await this.state.storage.put("lastActionTime", Date.now());
-
-      return await super.fetch(request);
-    }
-
-    if (url.pathname === "/status") {
-      const playerId = await this.state.storage.get("playerId");
-      const teamA = await this.state.storage.get("teamA");
-      const lastActionTime = await this.state.storage.get("lastActionTime");
-
-      return new Response(JSON.stringify({
-        playerId,
-        teamA,
-        lastActionTime
-      }), {
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-
-    return await super.fetch(request);
-  }
 }

@@ -26,6 +26,12 @@
 				"ZigguratOperator"
 			],
 			"tag": "v3"
+		},
+		{
+			"new_classes": [
+				"EventAggregator"
+			],
+			"tag": "v4"
 		}
 	],
 	"durable_objects": {
@@ -45,6 +51,10 @@
 			{ 
 				"class_name": "ZigguratOperator",
 				"name": "ZIGGURAT_OPERATOR"
+			},
+			{
+				"class_name": "EventAggregator",
+				"name": "EVENT_AGGREGATOR"
 			}
 		]
 	},

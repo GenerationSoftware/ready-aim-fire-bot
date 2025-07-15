@@ -17,21 +17,52 @@ export class BattleOperator extends Operator {
     return this.gameAddress;
   }
 
+  protected async getOperatorId(): Promise<string | null> {
+    return await this.getGameAddress() || null;
+  }
+
+  protected getDurableObjectNamespace(): string {
+    return "BATTLE_OPERATOR";
+  }
+
+  protected async validateStartParameters(params: URLSearchParams): Promise<string | null> {
+    const gameAddress = params.get("gameAddress");
+    if (!gameAddress) {
+      return "Missing required parameter: gameAddress";
+    }
+    return null;
+  }
+
   protected async getEventSubscriptions(): Promise<EventSubscription[]> {
+    const gameAddress = await this.getGameAddress();
+    this.log("Setting up event subscriptions for BattleOperator", {
+      gameAddress,
+      hasAddress: !!gameAddress
+    });
+    
+    if (!gameAddress) {
+      this.error("No game address available for event subscriptions");
+      return [];
+    }
+    
     return [
       {
         eventName: "EndedTurnEvent",
         abi: BattleABI as any[],
-        address: await this.getGameAddress(),
+        address: gameAddress,
         onEvent: async (logs: any[]) => {
+          this.log(`EndedTurnEvent triggered with ${logs.length} logs`);
           for (const log of logs) {
-            this.log("EndedTurnEvent received:", {
-              turn: log.args.turn?.toString(),
-              player: log.args.player
+            this.log("EndedTurnEvent details:", {
+              address: log.address,
+              turn: log.args?.turn?.toString(),
+              player: log.args?.player,
+              transactionHash: log.transactionHash,
+              blockNumber: log.blockNumber
             });
             
             // Trigger turn advancement check
-            this.checkAndAdvanceTurn();
+            await this.checkAndAdvanceTurn();
           }
         }
       }
@@ -61,7 +92,10 @@ export class BattleOperator extends Operator {
 
   private async checkAndAdvanceTurn(): Promise<number> {
     const gameAddress = await this.getGameAddress();
-    if (!gameAddress) return 0;
+    if (!gameAddress) {
+      this.log("NO GAME ADDRESS");
+      return 0;
+    }
 
     const publicClient = createPublicClient({
       chain: arbitrum,
@@ -125,6 +159,11 @@ export class BattleOperator extends Operator {
       const isTurnOver = multicallResults[0].result as boolean;
       const gameState = multicallResults[1].result as bigint;
 
+      this.log("Multicall results:", {
+        isTurnOver,
+        gameState
+      });
+
       // Only proceed if game is still active (state <= 2)
       if (gameState > 2n) {
         this.log("Game has ended, stopping operator");
@@ -141,27 +180,16 @@ export class BattleOperator extends Operator {
       if (gameState == 2n && isTurnOver) {
         this.log("Turn has ended, advancing to next turn");
         
-        // Get current turn information from contract
-        const currentTurn = await publicClient.readContract({
-          address: gameAddress as `0x${string}`,
-          abi: BattleABI as Abi,
-          functionName: 'currentTurn'
-        }) as bigint;
-        
-        const currentTurnEndsAt = await publicClient.readContract({
-          address: gameAddress as `0x${string}`,
-          abi: BattleABI as Abi,
-          functionName: 'currentTurnEndsAt'
-        }) as bigint;
-        
-        this.log("Current turn information from contract:", {
-          turn: currentTurn.toString(),
-          endsAt: currentTurnEndsAt.toString(),
-          endsAtDate: new Date(Number(currentTurnEndsAt) * 1000).toISOString()
-        });
-        
         // Create wallet client for sending transactions
-        const account = privateKeyToAccount(this.env.OPERATOR_PRIVATE_KEY as `0x${string}`);
+        const privateKey = this.env.OPERATOR_PRIVATE_KEY;
+        if (!privateKey) {
+          this.error("OPERATOR_PRIVATE_KEY is not set in environment");
+          return Date.now() + 5000;
+        }
+        
+        const account = privateKeyToAccount(privateKey as `0x${string}`);
+        this.log("Using operator address:", account.address);
+        
         const walletClient = createWalletClient({
           account,
           chain: arbitrum,
@@ -179,6 +207,8 @@ export class BattleOperator extends Operator {
         });
 
         this.log("Calling nextTurn for game ", gameAddress);
+        this.log("Using forwarder address:", this.env.ERC2771_FORWARDER_ADDRESS);
+        this.log("Using relayer URL:", this.env.RELAYER_URL);
 
         // Forward the transaction
         let hash;
@@ -240,4 +270,5 @@ export class BattleOperator extends Operator {
       return Date.now() + 5000;
     }
   }
+
 }

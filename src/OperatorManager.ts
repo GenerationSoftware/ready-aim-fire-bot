@@ -14,38 +14,69 @@ export class OperatorManager {
     }
 
     private async checkCharacterOperators() {
+      console.log("Checking character operators...");
       // Use GraphQL to find characters where our address is the operator, and get their battle players
       const graphqlClient = createGraphQLClient(this.env);
       const result = await graphqlClient.query<{characters: {items: Character[]}}>(GraphQLQueries.getMonsters, {
-        operator: this.env.OPERATOR_ADDRESS.toLowerCase()
+        owner: this.env.OPERATOR_ADDRESS.toLowerCase()
       });
 
       let totalBattlePlayers = 0;
       
       // Check each character and their battle players
       for (const character of result.characters.items) {
+        // console.log("Checking character:", character.id);
         if (!character.battlePlayers?.items) continue;
         
         for (const battlePlayer of character.battlePlayers.items) {
+          // console.log("Found battle player:", battlePlayer.playerId, "in team", battlePlayer.teamA ? "A" : "B");
           totalBattlePlayers++;
           const battle = battlePlayer.battle;
           
           // Skip if battle hasn't started
-          if (!battle || !battle.gameStartedAt) {
+          if (!battle.gameStartedAt) {
+            // console.log("Battle not started for ", battlePlayer.playerId, "in battle", battle.id);
             continue;
           }
-          
+
+          // console.log("battle winner: ", battle.winner)
+
+          if (battle.winner != null) {
+            // console.log("Battle already finished for player", battlePlayer.playerId, "in battle", battle.id);
+            continue;
+          }
+
           // Start character operator
           const id = this.env.CHARACTER_OPERATOR.idFromName(battlePlayer.playerId.toString());
           const characterOperator = this.env.CHARACTER_OPERATOR.get(id);
+          
+          // Check if operator is already running
+          try {
+            const statusResponse = await characterOperator.fetch(new Request(`http://operator/status`));
+            if (statusResponse.ok) {
+              const status = await statusResponse.json() as any;
+              if (status.running && 
+                  status.parameters.gameAddress === battle.id && 
+                  status.parameters.playerId === battlePlayer.playerId) {
+                console.log(`CharacterOperator already running for ${battle.id}-${battlePlayer.playerId}`);
+                continue;
+              }
+            }
+          } catch (error) {
+            // If status check fails, assume operator needs to be started
+            console.log(`Status check failed for CharacterOperator ${battle.id}-${battlePlayer.playerId}, starting...`);
+          }
+          
+          // Start the operator if not running
           characterOperator.fetch(new Request(`http://character-operator/start?gameAddress=${battle.id}&playerId=${battlePlayer.playerId}&teamA=${battlePlayer.teamA}`));
         }
       }
       
-      console.log("Found monster characters:", result.characters.items.length, "with total battle players:", totalBattlePlayers);
+      // console.log("Found monster characters:", result.characters.items.length, "with total battle players:", totalBattlePlayers);
     }
 
     private async checkBattleOperators() {
+      console.log("Checking battle operators...");
       // Use GraphQL to find battles where our address is the operator
       const graphqlClient = createGraphQLClient(this.env);
       
@@ -88,23 +119,58 @@ export class OperatorManager {
         const battleAddress = battle.id.toLowerCase();
         const id = this.env.BATTLE_OPERATOR.idFromName(battleAddress);
         const operator = this.env.BATTLE_OPERATOR.get(id);
+        
+        // Check if operator is already running
+        try {
+          const statusResponse = await operator.fetch(new Request(`http://operator/status`));
+          if (statusResponse.ok) {
+            const status = await statusResponse.json() as any;
+            if (status.running && status.parameters.gameAddress === battleAddress) {
+              console.log(`BattleOperator already running for ${battleAddress}`);
+              continue;
+            }
+          }
+        } catch (error) {
+          // If status check fails, assume operator needs to be started
+          console.log(`Status check failed for BattleOperator ${battleAddress}, starting...`);
+        }
+        
+        // Start the operator if not running
         operator.fetch(new Request(`http://operator/start?gameAddress=${battleAddress}`));
       }
     }
 
     private async checkZigguratOperators() {
+      console.log("Checking ziggurat operators...");
       // Use GraphQL to find parties where our operator is the character
       const graphqlClient = createGraphQLClient(this.env);
       const result = await graphqlClient.query<{ziggurats: {items: Ziggurat[]}}>(GraphQLQueries.getAllOpenZigguratsWithOperator, {
         operator: this.env.OPERATOR_ADDRESS.toLowerCase()
       });
 
-      console.log("Found %s open ziggurats:", result.ziggurats.items.length);
+      // console.log("Found %s open ziggurats:", result.ziggurats.items.length);
       
       for (const zig of result.ziggurats.items) {
         const zigAddress = zig.address.toLowerCase();
         const id = this.env.ZIGGURAT_OPERATOR.idFromName(zigAddress);
         const zigguratOperator = this.env.ZIGGURAT_OPERATOR.get(id);
+        
+        // Check if operator is already running
+        try {
+          const statusResponse = await zigguratOperator.fetch(new Request(`http://operator/status`));
+          if (statusResponse.ok) {
+            const status = await statusResponse.json() as any;
+            if (status.running && status.parameters.zigguratAddress === zigAddress) {
+              console.log(`ZigguratOperator already running for ${zigAddress}`);
+              continue;
+            }
+          }
+        } catch (error) {
+          // If status check fails, assume operator needs to be started
+          console.log(`Status check failed for ZigguratOperator ${zigAddress}, starting...`);
+        }
+        
+        // Start the operator if not running
         zigguratOperator.fetch(new Request(`http://ziggurat-operator/start?zigguratAddress=${zigAddress}`));
       }
     }
@@ -122,6 +188,19 @@ export class OperatorManager {
       if (url.pathname === "/start") {
         await this.state.storage.deleteAlarm();
         await this.state.storage.deleteAll();
+        
+        // Initialize the EventAggregator
+        try {
+          const aggregator = this.env.EVENT_AGGREGATOR.get(
+            this.env.EVENT_AGGREGATOR.idFromName("global")
+          );
+          const statusResponse = await aggregator.fetch(new Request('http://aggregator/status'));
+          const status = await statusResponse.json() as any;
+          console.log("EventAggregator status:", status);
+        } catch (error) {
+          console.error("Error checking EventAggregator:", error);
+        }
+        
         try {
           await this.checkAndStartBots();
         } catch (error: unknown) {

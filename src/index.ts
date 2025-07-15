@@ -3,6 +3,7 @@ import { OperatorManager } from "./OperatorManager";
 import { CharacterOperator } from "./CharacterOperator";
 import { BattleOperator } from "./BattleOperator";
 import { ZigguratOperator } from "./ZigguratOperator";
+import { EventAggregator } from "./EventAggregator";
 
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -10,7 +11,7 @@ export default {
 	},
 };
 
-export { OperatorManager, CharacterOperator, BattleOperator, ZigguratOperator };
+export { OperatorManager, CharacterOperator, BattleOperator, ZigguratOperator, EventAggregator };
 
 async function handleRequest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 	const url = new URL(request.url);

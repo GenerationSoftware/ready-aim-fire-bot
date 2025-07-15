@@ -16,6 +16,22 @@ export class ZigguratOperator extends Operator {
     return this.zigguratAddress;
   }
 
+  protected async getOperatorId(): Promise<string | null> {
+    return await this.getZigguratAddress() || null;
+  }
+
+  protected getDurableObjectNamespace(): string {
+    return "ZIGGURAT_OPERATOR";
+  }
+
+  protected async validateStartParameters(params: URLSearchParams): Promise<string | null> {
+    const zigguratAddress = params.get("zigguratAddress");
+    if (!zigguratAddress) {
+      return "Missing required parameter: zigguratAddress";
+    }
+    return null;
+  }
+
   protected async getEventSubscriptions(): Promise<EventSubscription[]> {
     return [
       {
@@ -33,6 +49,62 @@ export class ZigguratOperator extends Operator {
             this.checkSinglePartyProgress(log.args.partyId);
           }
         }
+      },
+      {
+        eventName: "PartyStartedEvent",
+        abi: ZigguratABI as any[],
+        address: await this.getZigguratAddress(),
+        onEvent: async (logs: any[]) => {
+          for (const log of logs) {
+            this.log("PartyStartedEvent received:", {
+              partyId: log.args.partyId?.toString()
+            });
+            
+            // Trigger single party check
+            this.checkSinglePartyProgress(log.args.partyId);
+          }
+        }
+      },
+      {
+        eventName: "RoomRevealedEvent",
+        abi: ZigguratABI as any[],
+        address: await this.getZigguratAddress(),
+        onEvent: async (logs: any[]) => {
+          for (const log of logs) {
+            this.log("RoomRevealedEvent received:", {
+              roomHash: log.args.roomHash,
+              doorIndex: log.args.doorIndex?.toString(),
+              childRoomHash: log.args.childRoomHash
+            });
+
+            // Query all parties waiting for this room revelation
+            const graphqlClient = createGraphQLClient(this.env);
+            const zigguratAddress = await this.getZigguratAddress();
+            if (!zigguratAddress) continue;
+
+            try {
+              const result = await graphqlClient.query<{partys: {items: Party[]}}>(
+                GraphQLQueries.getPartiesWaitingForRoom, 
+                {
+                  zigguratAddress: zigguratAddress.toLowerCase(),
+                  roomHash: log.args.roomHash,
+                  doorIndex: log.args.doorIndex?.toString()
+                }
+              );
+
+              const waitingParties = result.partys.items;
+              this.log(`Found ${waitingParties.length} parties waiting for room ${log.args.roomHash} door ${log.args.doorIndex}`);
+
+              // Process each waiting party
+              for (const party of waitingParties) {
+                this.log(`Processing party ${party.partyId} after room revelation`);
+                await this.checkSinglePartyProgress(BigInt(party.partyId));
+              }
+            } catch (error) {
+              this.error("Error querying parties waiting for room:", error);
+            }
+          }
+        }
       }
     ];
   }
@@ -47,11 +119,11 @@ export class ZigguratOperator extends Operator {
 
   // Override logging methods to maintain ziggurat-specific naming
   protected log(...args: any[]): void {
-    console.log({
-      origin: "ZIGGURAT_OPERATOR",
-      zigguratAddress: this.zigguratAddress,
-      ...args
-    });
+    // console.log({
+    //   origin: "ZIGGURAT_OPERATOR",
+    //   zigguratAddress: this.zigguratAddress,
+    //   ...args
+    // });
   }
 
   protected error(...args: any[]): void {
@@ -91,7 +163,10 @@ export class ZigguratOperator extends Operator {
 
   private async checkAllPartiesProgress(): Promise<boolean> {
     const zigguratAddress = await this.getZigguratAddress();
-    if (!zigguratAddress) return false;
+    if (!zigguratAddress) {
+      this.log("No zigguratAddress set, skipping checkAllPartiesProgress");
+      return false;
+    }
 
     try {
       // Use GraphQL to get all DOOR_CHOSEN parties for this ziggurat

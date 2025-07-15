@@ -1,68 +1,68 @@
 [
   {
     "contractName": "Battle",
-    "contractAddress": "0xe438c7bd32e5558efb470e7745ebb2e82393941e",
-    "transactionHash": "0x636cc91f9467b3b59a6a073bf736bc4de91250afdd953716008014af52c7ebd4",
-    "blockNumber": "0x2f4f00"
+    "contractAddress": "0x3e3a3d8f867a99f1f6b6e9db44fcd48beb3c9cd1",
+    "transactionHash": "0x38aa9b551b3856d8c821ef0bbb91030314acb3653a7c8cae09d59da000ddedee",
+    "blockNumber": "0x2f8857"
   },
   {
     "contractName": "BasicDeck",
-    "contractAddress": "0x5f4e9007679218ee247e6a44874e302116c87263",
-    "transactionHash": "0x2cff93f061c6de8a1d6d7e23f74cdcd09a789bec59ce4c098d0b6f3b8dda7e29",
-    "blockNumber": "0x2f4f01"
+    "contractAddress": "0xa8f79649b050ed18b5670dd47b67e58f49af84eb",
+    "transactionHash": "0xeb3a060256db3f6dcfde82efadc900dc7ebfe52ae183b7cc82ee7b505445eb18",
+    "blockNumber": "0x2f8858"
   },
   {
     "contractName": "BasicDeckLogic",
-    "contractAddress": "0xfa05070e3fb695eef7515ec96828ad9978fd46eb",
-    "transactionHash": "0x33c69e4ef46d85a225dc02ab52ebdf4f4396055f787a1e279a44f896256e8edf",
-    "blockNumber": "0x2f4f01"
+    "contractAddress": "0x27565ca39db01ea3e7dbed3251b95401cf76685a",
+    "transactionHash": "0x26491d5e1f7f22badd130c1d068fff4bec6920ec73164c5936a64b0f020426c9",
+    "blockNumber": "0x2f8859"
   },
   {
     "contractName": "DeckConfiguration",
-    "contractAddress": "0xb9b753bcbdf6edb5f9e8b6a8b0b54cbd61ca9e2c",
-    "transactionHash": "0xcdae731dc61c015df6c40055dd5dfb51def1604591969a0ad2d2b30717941f87",
-    "blockNumber": "0x2f4f01"
+    "contractAddress": "0x6fc9b43076f7ef18e0b4c37bd33971beb2dfe9bd",
+    "transactionHash": "0xc2579c42a966175df5de2929b8751a85999084991dc5df971d3f537d53c17ef1",
+    "blockNumber": "0x2f8859"
   },
   {
     "contractName": "Minter",
-    "contractAddress": "0x9c0dd36bf7939454dd1b6c272d76b89471068f5b",
-    "transactionHash": "0xab44f0dd511d57699d56c32f4afe4a39f1c8ce40cced8e843344dd4be8e530e2",
-    "blockNumber": "0x2f4f01"
+    "contractAddress": "0xc1adc7271b8305c9a5c2c758d402e5878dcc391e",
+    "transactionHash": "0x200d3e9f64047104b95375ab6c12d69a0ed282cc4a860bb634bc6bb413cb8c2b",
+    "blockNumber": "0x2f8859"
   },
   {
     "contractName": "BattleFactory",
-    "contractAddress": "0x996fd36fd5968d889941d6921c57904fbf8f7ee5",
-    "transactionHash": "0xdcee11456ae415d68cc67178bbcfe05a823070b9d7844cd64bf424f5454fa1a4",
-    "blockNumber": "0x2f4f01"
+    "contractAddress": "0x6eed221dd9e488c253fca1df14a12300905358a9",
+    "transactionHash": "0x2f4a040097ac29d491751e807681aa762592976deb4d78c0bf130804c24881e4",
+    "blockNumber": "0x2f8859"
   },
   {
     "contractName": "MonsterRegistry",
-    "contractAddress": "0xd64ae77cfc0bc8c29f706c7f467f10bb1b217ac0",
-    "transactionHash": "0xdcd09fe3dd49b6d4c846eb31f306cfb08554554fc46ef09333bae7b803dafef2",
-    "blockNumber": "0x2f4f02"
+    "contractAddress": "0xf2ccbfa09ebc7bcefa3703ae60ecba832cc7c136",
+    "transactionHash": "0x55eb7d137addaa2e70e3e54919054716277df2bee7606a8fb7b3aef291339ceb",
+    "blockNumber": "0x2f8859"
   },
   {
     "contractName": "CharacterFactory",
-    "contractAddress": "0x06c0f37eb4e9d0542e1a298ce93279719b4e0f56",
-    "transactionHash": "0x87d532167a75d115ff0dd0cb30d0348a8b7d415eeff3a508d01aa0955fd86694",
-    "blockNumber": "0x2f4f02"
+    "contractAddress": "0xe505839fb13d9c19adfbe0f989cf57bed1446c6d",
+    "transactionHash": "0x4fe38dcca77a463e07e65704d26990572e36e6cf7bd7480acada995905e0fd49",
+    "blockNumber": "0x2f885a"
   },
   {
     "contractName": "ZigguratSingleton",
-    "contractAddress": "0x11e79029c76e95738afa5b0b65d3ed86fe4795a4",
-    "transactionHash": "0x029a587640ac390aff0171d378ca00db24cf5ae647d8dec6650add528154f1d5",
-    "blockNumber": "0x2f4f02"
+    "contractAddress": "0x4095322c44b192afdcf0b368ae92e30da88592e1",
+    "transactionHash": "0x0eb0df99f36419fda1d758be7ba0cbfc4588f36cdaf7718c2892accecd4f7b57",
+    "blockNumber": "0x2f885a"
   },
   {
     "contractName": "Ziggurat",
-    "contractAddress": "0xbfaa1f75df064f0af5d98d1f880e2fe1050fbfa4",
-    "transactionHash": "0x90a7e63566d4f60fa86fb348383cc71ab5fc6f8ec760ed786eb757d93784e96e",
-    "blockNumber": "0x2f4f02"
+    "contractAddress": "0xa5cce03792875a2fccbd76ac528bf15f8b86c9ab",
+    "transactionHash": "0xfb54ae0d8c589f761fa03a16a10377b2066e118a288cbca94d94c052578d2345",
+    "blockNumber": "0x2f885a"
   },
   {
     "contractName": "ZigguratBattleRewards",
-    "contractAddress": "0xcc153a46f92ee248cb8976fdd72199653e996c39",
-    "transactionHash": "0xbaa854342ebb09753c916870d1e8327d905f9fc4e9c0f368ad5677b572cb54f4",
-    "blockNumber": "0x2f4f09"
+    "contractAddress": "0x601b57efb385e36fb4d1b8e9fc91bd8fa045cdd1",
+    "transactionHash": "0x1d5788a4ff793760afb5c0769ac1eccddf9db4782e94faf6f3976b27c2c06d8e",
+    "blockNumber": "0x2f8861"
   }
 ]

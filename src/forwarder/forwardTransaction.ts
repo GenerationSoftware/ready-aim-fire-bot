@@ -50,6 +50,8 @@ export const forwardTransaction = async (params: ForwardTransactionParams, walle
       args: [from]
     })
 
+    console.log(`Forwarder nonce for ${from}: ${nonce}`)
+
     // Prepare the forward request
     const forwardRequest = {
       from,
@@ -77,10 +79,22 @@ export const forwardTransaction = async (params: ForwardTransactionParams, walle
       to,
       value: value.toString(),
       gas: gas.toString(),
+      nonce: nonce.toString(),
       deadline: deadline.toString(),
       data,
       signature
     }
+
+    console.log('Sending to relayer:', {
+      from,
+      to,
+      value: value.toString(),
+      gas: gas.toString(), 
+      nonce: nonce.toString(),
+      deadline: deadline.toString(),
+      dataLength: data.length,
+      forwarderAddress
+    })
 
     // Send the request to the relayer
     const response = await fetch(relayerUrl, {
@@ -90,6 +104,8 @@ export const forwardTransaction = async (params: ForwardTransactionParams, walle
       },
       body: JSON.stringify(requestBody),
     })
+
+    console.log('Request sent to relayer:', JSON.stringify(requestBody, null, 2))
 
     // Log the response status and headers for debugging
     console.log('Relayer response status:', response.status)

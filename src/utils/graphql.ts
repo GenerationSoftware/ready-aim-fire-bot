@@ -167,6 +167,33 @@ export const GraphQLQueries = {
     }
   `,
 
+  getPartiesWaitingForRoom: `
+    query GetPartiesWaitingForRoom($zigguratAddress: String!, $roomHash: String!, $doorIndex: String!) {
+      partys(where: { 
+        zigguratAddress: $zigguratAddress, 
+        roomHash: $roomHash, 
+        chosenDoor: $doorIndex, 
+        state: "1",
+        endedAt: "0"
+      }) {
+        items {
+          id
+          zigguratAddress
+          partyId
+          leader
+          isPublic
+          inviter
+          roomHash
+          chosenDoor
+          state
+          createdAt
+          startedAt
+          endedAt
+        }
+      }
+    }
+  `,
+
   getSpecificPartyByZiggurat: `
     query GetSpecificPartyByZiggurat($zigguratAddress: String!, $partyId: String!) {
       partys(where: { zigguratAddress: $zigguratAddress, partyId: $partyId, state: "1" }) {
@@ -191,7 +218,7 @@ export const GraphQLQueries = {
   // Battle queries
   getBattlesByGameState: `
     query GetBattlesByGameState {
-      battles(where: { gameStartedAt_not: null }) {
+      battles(where: { gameStartedAt_not: null, winner: null }) {
         items {
           id
           gameStartedAt
@@ -268,8 +295,8 @@ export const GraphQLQueries = {
   `,
 
   getMonsters: `
-    query GetMonsters($operator: String!) {
-      characters(where: { operator: $operator }) {
+    query GetMonsters($owner: String!) {
+      characters(where: { owner: $owner }) {
         items {
           id
           name
@@ -287,6 +314,7 @@ export const GraphQLQueries = {
                 currentTurn
                 teamAStarts
                 turnDuration
+                winner
               }
             }
           }
