@@ -168,7 +168,7 @@ export const GraphQLQueries = {
   `,
 
   getPartiesWaitingForRoom: `
-    query GetPartiesWaitingForRoom($zigguratAddress: String!, $roomHash: String!, $doorIndex: String!) {
+    query GetPartiesWaitingForRoom($zigguratAddress: String!, $roomHash: String!, $doorIndex: BigInt!) {
       partys(where: { 
         zigguratAddress: $zigguratAddress, 
         roomHash: $roomHash, 
@@ -265,7 +265,7 @@ export const GraphQLQueries = {
   // OperatorManager queries
   getBattlesWithOperator: `
     query GetBattlesWithOperator($operator: String!) {
-      battles(where: { operator: $operator, currentTurn_gt: "0" }) {
+      battles(where: { operator: $operator }, limit: 1000) {
         items {
           id
           operator

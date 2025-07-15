@@ -224,16 +224,19 @@ export abstract class Operator {
         this.log("Already registered with EventAggregator");
       }
 
-      // Setup alarm if none exists or if existing alarm is in the past
+      // Always ensure we have a future alarm scheduled
       try {
         const currentAlarm = await this.state.storage.getAlarm();
         const currentTime = Date.now();
+        const lastCheckTime = await this.state.storage.get("lastCheckTime") as number || 0;
+        const timeSinceLastCheck = currentTime - lastCheckTime;
         
-        if (currentAlarm === null || currentAlarm < currentTime) {
-          this.state.storage.setAlarm(currentTime + 5000);
-          this.log("Alarm scheduled for periodic checks");
+        // If no alarm or alarm is in the past or operator hasn't run recently, schedule new alarm
+        if (currentAlarm === null || currentAlarm < currentTime || timeSinceLastCheck > 30000) {
+          await this.state.storage.setAlarm(currentTime + 5000);
+          this.log(`Alarm scheduled for periodic checks (was dead for ${timeSinceLastCheck}ms)`);
         } else {
-          this.log("Alarm already scheduled");
+          this.log(`Alarm already scheduled for ${new Date(currentAlarm).toISOString()}`);
         }
       } catch (error) {
         this.error("Failed to setup alarm:", error);
@@ -280,18 +283,37 @@ export abstract class Operator {
       const alarm = await this.state.storage.getAlarm();
       const hasAlarm = alarm !== null && alarm > Date.now();
       const lastCheckTime = storedParams.lastCheckTime || 0;
+      const timeSinceLastCheck = Date.now() - lastCheckTime;
+      
+      // Consider operator dead if it hasn't run in over 30 seconds
+      const isAlive = timeSinceLastCheck < 30000;
       
       return new Response(JSON.stringify({
-        running: hasEventRegistration && hasAlarm,
+        running: hasEventRegistration && hasAlarm && isAlive,
+        alive: isAlive,
         operatorType: this.constructor.name,
         hasEventRegistration,
         hasAlarm,
         alarm,
+        alarmInMs: alarm ? alarm - Date.now() : null,
         lastCheckTime,
+        timeSinceLastCheck,
         parameters: storedParams
       }), {
         headers: { "Content-Type": "application/json" }
       });
+    }
+
+    if (url.pathname === "/wake") {
+      // Force the operator to run its alarm immediately
+      try {
+        this.log("Manually waking operator");
+        await this.alarm();
+        return new Response("Operator woken successfully");
+      } catch (error) {
+        this.error("Error waking operator:", error);
+        return new Response(`Error waking operator: ${error}`, { status: 500 });
+      }
     }
 
     return new Response("Not found", { status: 404 });

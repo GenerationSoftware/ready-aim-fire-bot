@@ -22,11 +22,15 @@ export class EventAggregator {
   private registrations: Map<string, EventRegistration[]> = new Map();
   private operators: Map<string, RegisteredOperator> = new Map();
   private unwatchFunctions: Map<string, () => void> = new Map();
+  private lastHealthCheck: number = 0;
+  private isReconnecting: boolean = false;
+  private websocketErrors: number = 0;
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
     this.env = env;
     this.restoreState();
+    this.scheduleHealthCheck();
   }
 
   private async restoreState() {
@@ -198,6 +202,11 @@ export class EventAggregator {
         },
         onError: (error: any) => {
           console.error(`Error watching ${eventKey}:`, error);
+          // If WebSocket error, trigger reconnection
+          if (error.name === 'SocketClosedError' || error.name === 'WebSocketRequestError') {
+            console.error(`WebSocket error detected for ${eventKey}, triggering reconnection`);
+            this.handleWebSocketError();
+          }
         }
       } as any);
       
@@ -394,6 +403,8 @@ export class EventAggregator {
         registrationCount: this.registrations.size,
         operatorCount: this.operators.size,
         activeSubscriptions: this.unwatchFunctions.size,
+        lastHealthCheck: this.lastHealthCheck,
+        timeSinceLastHealthCheck: Date.now() - this.lastHealthCheck,
         operators: Array.from(this.operators.entries()).map(([id, op]) => ({
           id,
           namespace: op.namespace,
@@ -405,5 +416,122 @@ export class EventAggregator {
     }
 
     return new Response("Not found", { status: 404 });
+  }
+
+  private async scheduleHealthCheck() {
+    // Schedule health check every 30 seconds
+    await this.state.storage.setAlarm(Date.now() + 30000);
+  }
+
+  async alarm() {
+    console.log("EventAggregator health check alarm triggered");
+    
+    try {
+      // Check if we have any registrations
+      if (this.registrations.size === 0) {
+        console.log("No registrations, skipping health check");
+        await this.scheduleHealthCheck();
+        return;
+      }
+
+      // Check WebSocket connection health
+      const isHealthy = await this.checkWebSocketHealth();
+      
+      if (!isHealthy) {
+        console.log("WebSocket connection unhealthy, attempting to restore");
+        await this.restoreWebSocketConnection();
+      } else {
+        console.log("WebSocket connection healthy");
+      }
+
+      // Update last health check time
+      this.lastHealthCheck = Date.now();
+      
+      // Reset error counter if connection is healthy
+      if (isHealthy) {
+        this.websocketErrors = 0;
+      }
+      
+      // Schedule next health check
+      await this.scheduleHealthCheck();
+    } catch (error) {
+      console.error("Error in EventAggregator health check:", error);
+      // Schedule next check even on error
+      await this.scheduleHealthCheck();
+    }
+  }
+
+  private async checkWebSocketHealth(): Promise<boolean> {
+    if (!this.wsClient) {
+      console.log("No WebSocket client exists");
+      return false;
+    }
+
+    try {
+      // Try to get the current block number as a health check
+      const blockNumber = await Promise.race([
+        this.wsClient.getBlockNumber(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("WebSocket health check timeout")), 5000)
+        )
+      ]);
+      
+      console.log("WebSocket health check successful, block:", blockNumber);
+      return true;
+    } catch (error) {
+      console.error("WebSocket health check failed:", error);
+      return false;
+    }
+  }
+
+  private async restoreWebSocketConnection() {
+    try {
+      console.log("Attempting to restore WebSocket connection");
+      
+      // Clean up existing connection
+      if (this.wsClient) {
+        // Unsubscribe all events
+        for (const unwatch of this.unwatchFunctions.values()) {
+          try {
+            unwatch();
+          } catch (error) {
+            console.error("Error unwatching event:", error);
+          }
+        }
+        this.unwatchFunctions.clear();
+        this.wsClient = null;
+      }
+
+      // Re-establish connection
+      await this.setupWebSocketConnection();
+      
+      console.log("WebSocket connection restored successfully");
+    } catch (error) {
+      console.error("Failed to restore WebSocket connection:", error);
+      // Will retry on next health check
+    }
+  }
+
+  private async handleWebSocketError() {
+    this.websocketErrors++;
+    
+    // Avoid multiple simultaneous reconnection attempts
+    if (this.isReconnecting) {
+      console.log("Already attempting to reconnect, skipping");
+      return;
+    }
+
+    // If we've had multiple errors in a short time, trigger immediate reconnection
+    if (this.websocketErrors >= 3) {
+      console.log(`Multiple WebSocket errors (${this.websocketErrors}), triggering immediate reconnection`);
+      this.isReconnecting = true;
+      this.websocketErrors = 0;
+      
+      try {
+        await this.restoreWebSocketConnection();
+      } finally {
+        this.isReconnecting = false;
+      }
+    }
   }
 }

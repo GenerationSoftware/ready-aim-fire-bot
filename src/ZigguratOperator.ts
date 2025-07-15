@@ -88,7 +88,7 @@ export class ZigguratOperator extends Operator {
                 {
                   zigguratAddress: zigguratAddress.toLowerCase(),
                   roomHash: log.args.roomHash,
-                  doorIndex: log.args.doorIndex?.toString()
+                  doorIndex: log.args.doorIndex?.toString() || "0" // Convert BigInt to string for JSON serialization
                 }
               );
 

@@ -55,10 +55,16 @@ export class OperatorManager {
             const statusResponse = await characterOperator.fetch(new Request(`http://operator/status`));
             if (statusResponse.ok) {
               const status = await statusResponse.json() as any;
-              if (status.running && 
+              const lastCheckTime = status.lastCheckTime || 0;
+              const timeSinceLastCheck = Date.now() - lastCheckTime;
+              
+              // Use the operator's own alive check
+              if (!status.alive) {
+                console.log(`CharacterOperator ${battle.id}-${battlePlayer.playerId} is dead (last check: ${timeSinceLastCheck}ms ago), restarting...`);
+              } else if (status.running && 
                   status.parameters.gameAddress === battle.id && 
                   status.parameters.playerId === battlePlayer.playerId) {
-                console.log(`CharacterOperator already running for ${battle.id}-${battlePlayer.playerId}`);
+                console.log(`CharacterOperator running for ${battle.id}-${battlePlayer.playerId} (alive: ${status.alive}, alarm in: ${status.alarmInMs}ms)`);
                 continue;
               }
             }
@@ -83,6 +89,8 @@ export class OperatorManager {
       const result = await graphqlClient.query<{battles: {items: Battle[]}}>(GraphQLQueries.getBattlesWithOperator, {
         operator: this.env.OPERATOR_ADDRESS.toLowerCase()
       });
+
+      console.log(`Found ${result.battles.items.length} battles where we are operator`);
 
       // Filter battles by gameState using multicall
       const publicClient = createPublicClient({
@@ -112,8 +120,11 @@ export class OperatorManager {
           return false;
         }
         const gameState = Number(response.result);
+        console.log(`Battle ${battle.id} has gameState: ${gameState}`);
         return gameState === 2;
       });
+
+      console.log(`Found ${activeBattles.length} active battles (gameState == 2)`)
 
       for (const battle of activeBattles) {
         const battleAddress = battle.id.toLowerCase();
@@ -125,8 +136,14 @@ export class OperatorManager {
           const statusResponse = await operator.fetch(new Request(`http://operator/status`));
           if (statusResponse.ok) {
             const status = await statusResponse.json() as any;
-            if (status.running && status.parameters.gameAddress === battleAddress) {
-              console.log(`BattleOperator already running for ${battleAddress}`);
+            const lastCheckTime = status.lastCheckTime || 0;
+            const timeSinceLastCheck = Date.now() - lastCheckTime;
+            
+            // Use the operator's own alive check
+            if (!status.alive) {
+              console.log(`BattleOperator ${battleAddress} is dead (last check: ${timeSinceLastCheck}ms ago), restarting...`);
+            } else if (status.running && status.parameters.gameAddress === battleAddress) {
+              console.log(`BattleOperator running for ${battleAddress} (alive: ${status.alive}, alarm in: ${status.alarmInMs}ms)`);
               continue;
             }
           }
@@ -160,8 +177,14 @@ export class OperatorManager {
           const statusResponse = await zigguratOperator.fetch(new Request(`http://operator/status`));
           if (statusResponse.ok) {
             const status = await statusResponse.json() as any;
-            if (status.running && status.parameters.zigguratAddress === zigAddress) {
-              console.log(`ZigguratOperator already running for ${zigAddress}`);
+            const lastCheckTime = status.lastCheckTime || 0;
+            const timeSinceLastCheck = Date.now() - lastCheckTime;
+            
+            // Use the operator's own alive check
+            if (!status.alive) {
+              console.log(`ZigguratOperator ${zigAddress} is dead (last check: ${timeSinceLastCheck}ms ago), restarting...`);
+            } else if (status.running && status.parameters.zigguratAddress === zigAddress) {
+              console.log(`ZigguratOperator running for ${zigAddress} (alive: ${status.alive}, alarm in: ${status.alarmInMs}ms)`);
               continue;
             }
           }
