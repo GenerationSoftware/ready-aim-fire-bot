@@ -1,7 +1,9 @@
 import type { WalletClient, Address, Hash, PublicClient } from 'viem';
 import { ERC2771ForwarderABI } from './ERC2771ForwarderABI';
-import { createPublicClient, http } from 'viem';
+import { createPublicClient } from 'viem';
 import { arbitrum } from 'viem/chains';
+import { createAuthenticatedHttpTransport } from '../utils/rpc';
+import type { Env } from '../Env';
 
 export interface ForwardRequestData {
 	from: Address;
@@ -18,12 +20,13 @@ export async function signForwardRequest(
 	walletClient: WalletClient,
 	forwarderAddress: Address,
 	request: Omit<ForwardRequestData, 'signature'>,
-	rpcUrl: string
+	rpcUrl: string,
+	env: Env
 ): Promise<Hash> {
 	// Create public client for reading contract state
 	const publicClient = createPublicClient({
 		chain: arbitrum,
-		transport: http(rpcUrl)
+		transport: createAuthenticatedHttpTransport(rpcUrl, env)
 	});
 
 	const [, name, version, chainId, verifyingContract] = await publicClient.readContract({

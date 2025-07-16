@@ -1,8 +1,9 @@
 import { Env } from "./Env";
 import BattleABI from "./contracts/abis/Battle.json";
-import { createPublicClient, http, type Abi } from "viem";
+import { createPublicClient, type Abi } from "viem";
 import { arbitrum } from "viem/chains";
 import { createGraphQLClient, GraphQLQueries, type Battle, type Character, type Ziggurat } from "./utils/graphql";
+import { createAuthenticatedHttpTransport } from "./utils/rpc";
 
 export class OperatorManager {
     state: DurableObjectState;
@@ -95,7 +96,7 @@ export class OperatorManager {
       // Filter battles by gameState using multicall
       const publicClient = createPublicClient({
         chain: arbitrum,
-        transport: http(this.env.ETH_RPC_URL)
+        transport: createAuthenticatedHttpTransport(this.env.ETH_RPC_URL, this.env)
       });
 
       const battleAddresses = result.battles.items.map(battle => battle.id);

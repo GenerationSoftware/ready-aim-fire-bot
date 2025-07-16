@@ -1,11 +1,12 @@
 import { Env } from "./Env";
 import BattleABI from "./contracts/abis/Battle.json";
-import { createPublicClient, createWalletClient, http, encodeFunctionData, type Abi } from "viem";
+import { createPublicClient, createWalletClient, encodeFunctionData, type Abi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
 import { forwardTransaction } from "./forwarder/forwardTransaction";
 import { createGraphQLClient, GraphQLQueries, type Battle } from "./utils/graphql";
 import { Operator, type EventSubscription } from "./Operator";
+import { createAuthenticatedHttpTransport } from "./utils/rpc";
 
 export class BattleOperator extends Operator {
   private gameAddress: string | undefined;
@@ -99,7 +100,7 @@ export class BattleOperator extends Operator {
 
     const publicClient = createPublicClient({
       chain: arbitrum,
-      transport: http(this.env.ETH_RPC_URL)
+      transport: createAuthenticatedHttpTransport(this.env.ETH_RPC_URL, this.env)
     });
 
     try {
@@ -193,7 +194,7 @@ export class BattleOperator extends Operator {
         const walletClient = createWalletClient({
           account,
           chain: arbitrum,
-          transport: http(this.env.ETH_RPC_URL)
+          transport: createAuthenticatedHttpTransport(this.env.ETH_RPC_URL, this.env)
         });
 
         // Generate a random number for nextTurn
@@ -218,7 +219,8 @@ export class BattleOperator extends Operator {
               to: gameAddress as `0x${string}`,
               data: data,
               rpcUrl: this.env.ETH_RPC_URL,
-              relayerUrl: this.env.RELAYER_URL
+              relayerUrl: this.env.RELAYER_URL,
+              env: this.env
             },
             walletClient,
             this.env.ERC2771_FORWARDER_ADDRESS as `0x${string}`

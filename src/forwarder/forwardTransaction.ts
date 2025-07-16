@@ -1,7 +1,9 @@
-import { Address, Hash, WalletClient, createPublicClient, http } from "viem";
+import { Address, Hash, WalletClient, createPublicClient } from "viem";
 import { ERC2771ForwarderABI } from "./ERC2771ForwarderABI";
 import { signForwardRequest } from "./signForwardRequest";
 import { arbitrum } from "viem/chains";
+import { createAuthenticatedHttpTransport } from "../utils/rpc";
+import type { Env } from "../Env";
 
 interface RelayerResponse {
   transactionHash: Hash;
@@ -16,10 +18,11 @@ export interface ForwardTransactionParams {
   deadline?: bigint
   rpcUrl: string
   relayerUrl: string
+  env: Env
 }
 
 export const forwardTransaction = async (params: ForwardTransactionParams, walletClient: WalletClient, forwarderAddress: Address): Promise<Hash> => {
-    const { to, data, value = 0n, gas = 10000000n, deadline = BigInt(Math.floor(Date.now() / 1000) + 60), rpcUrl, relayerUrl } = params
+    const { to, data, value = 0n, gas = 10000000n, deadline = BigInt(Math.floor(Date.now() / 1000) + 60), rpcUrl, relayerUrl, env } = params
 
     // Validate required parameters
     if (!to) {
@@ -39,7 +42,7 @@ export const forwardTransaction = async (params: ForwardTransactionParams, walle
     // Create public client for reading contract state
     const publicClient = createPublicClient({
       chain: arbitrum,
-      transport: http(rpcUrl)
+      transport: createAuthenticatedHttpTransport(rpcUrl, env)
     });
 
     // Get the current nonce from the forwarder contract
@@ -68,7 +71,8 @@ export const forwardTransaction = async (params: ForwardTransactionParams, walle
       walletClient,
       forwarderAddress,
       forwardRequest,
-      rpcUrl
+      rpcUrl,
+      env
     )
 
     console.log("SIGNATURE", signature)

@@ -1,5 +1,5 @@
 import { Env } from "./Env";
-import { createPublicClient, http, createWalletClient, encodeFunctionData, type Abi } from "viem";
+import { createPublicClient, createWalletClient, encodeFunctionData, type Abi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
 import BattleABI from "./contracts/abis/Battle.json";
@@ -8,6 +8,7 @@ import { createGraphQLClient, GraphQLQueries, type BattlePlayer } from "./utils/
 import { Operator, type EventSubscription } from "./Operator";
 import { getPlayerEnergy } from "./utils/playerStats";
 import { cardPileBitsToArray, removeCardFromHand } from "./utils/cardPiles";
+import { createAuthenticatedHttpTransport } from "./utils/rpc";
 
 export class CharacterOperator extends Operator {
   private gameAddress: string | null = null;
@@ -102,7 +103,7 @@ export class CharacterOperator extends Operator {
     // Create public client
     const publicClient = createPublicClient({
       chain: arbitrum,
-      transport: http(this.env.ETH_RPC_URL)
+      transport: createAuthenticatedHttpTransport(this.env.ETH_RPC_URL, this.env)
     });
 
     try {
@@ -290,7 +291,7 @@ export class CharacterOperator extends Operator {
       const walletClient = createWalletClient({
         account,
         chain: arbitrum,
-        transport: http(this.env.ETH_RPC_URL)
+        transport: createAuthenticatedHttpTransport(this.env.ETH_RPC_URL, this.env)
       });
 
       try {
@@ -299,7 +300,8 @@ export class CharacterOperator extends Operator {
             to: gameAddress,
             data: actionData,
             rpcUrl: this.env.ETH_RPC_URL,
-            relayerUrl: this.env.RELAYER_URL
+            relayerUrl: this.env.RELAYER_URL,
+            env: this.env
           },
           walletClient,
           this.env.ERC2771_FORWARDER_ADDRESS as `0x${string}`
@@ -387,7 +389,7 @@ export class CharacterOperator extends Operator {
       const walletClient = createWalletClient({
         account,
         chain: arbitrum,
-        transport: http(this.env.ETH_RPC_URL)
+        transport: createAuthenticatedHttpTransport(this.env.ETH_RPC_URL, this.env)
       });
 
       try {
@@ -396,7 +398,8 @@ export class CharacterOperator extends Operator {
             to: gameAddress,
             data: endTurnData,
             rpcUrl: this.env.ETH_RPC_URL,
-            relayerUrl: this.env.RELAYER_URL
+            relayerUrl: this.env.RELAYER_URL,
+            env: this.env
           },
           walletClient,
           this.env.ERC2771_FORWARDER_ADDRESS as `0x${string}`

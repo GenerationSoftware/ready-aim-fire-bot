@@ -1,10 +1,11 @@
 import ZigguratABI from "./contracts/abis/Ziggurat.json";
-import { createPublicClient, createWalletClient, http, encodeFunctionData, type Abi, keccak256, encodePacked } from "viem";
+import { createPublicClient, createWalletClient, encodeFunctionData, type Abi, keccak256, encodePacked } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
 import { forwardTransaction } from "./forwarder/forwardTransaction";
 import { createGraphQLClient, GraphQLQueries, type Party, type ZigguratRoom } from "./utils/graphql";
 import { Operator, type EventSubscription } from "./Operator";
+import { createAuthenticatedHttpTransport } from "./utils/rpc";
 
 export class ZigguratOperator extends Operator {
   private zigguratAddress: string | undefined;
@@ -254,7 +255,7 @@ export class ZigguratOperator extends Operator {
       const walletClient = createWalletClient({
         account,
         chain: arbitrum,
-        transport: http(this.env.ETH_RPC_URL)
+        transport: createAuthenticatedHttpTransport(this.env.ETH_RPC_URL, this.env)
       });
 
       // Get the actual chain ID from the RPC
@@ -318,7 +319,8 @@ export class ZigguratOperator extends Operator {
             to: (await this.getZigguratAddress()) as `0x${string}`,
             data: data,
             rpcUrl: this.env.ETH_RPC_URL,
-            relayerUrl: this.env.RELAYER_URL
+            relayerUrl: this.env.RELAYER_URL,
+            env: this.env
           },
           walletClient,
           this.env.ERC2771_FORWARDER_ADDRESS as `0x${string}`
@@ -335,7 +337,7 @@ export class ZigguratOperator extends Operator {
         try {
           const publicClient = createPublicClient({
             chain: arbitrum,
-            transport: http(this.env.ETH_RPC_URL)
+            transport: createAuthenticatedHttpTransport(this.env.ETH_RPC_URL, this.env)
           });
           const receipt = await publicClient.waitForTransactionReceipt({ hash });
           this.log("RevealDoor transaction confirmed:", receipt);
@@ -363,7 +365,7 @@ export class ZigguratOperator extends Operator {
       const walletClient = createWalletClient({
         account,
         chain: arbitrum,
-        transport: http(this.env.ETH_RPC_URL)
+        transport: createAuthenticatedHttpTransport(this.env.ETH_RPC_URL, this.env)
       });
 
       // Encode the enterDoor function call
@@ -383,7 +385,8 @@ export class ZigguratOperator extends Operator {
             to: (await this.getZigguratAddress()) as `0x${string}`,
             data: data,
             rpcUrl: this.env.ETH_RPC_URL,
-            relayerUrl: this.env.RELAYER_URL
+            relayerUrl: this.env.RELAYER_URL,
+            env: this.env
           },
           walletClient,
           this.env.ERC2771_FORWARDER_ADDRESS as `0x${string}`
@@ -400,7 +403,7 @@ export class ZigguratOperator extends Operator {
         try {
           const publicClient = createPublicClient({
             chain: arbitrum,
-            transport: http(this.env.ETH_RPC_URL)
+            transport: createAuthenticatedHttpTransport(this.env.ETH_RPC_URL, this.env)
           });
           const receipt = await publicClient.waitForTransactionReceipt({ hash });
           this.log("EnterDoor transaction confirmed:", receipt);
