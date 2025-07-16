@@ -6,6 +6,8 @@ export interface Env {
 	ERC2771_FORWARDER_ADDRESS: string;
 	RELAYER_URL: string;
 	GRAPHQL_URL: string;
+	BASIC_AUTH_USER?: string;
+	BASIC_AUTH_PASSWORD?: string;
 	OPERATOR_MANAGER: DurableObjectNamespace;
 	CHARACTER_OPERATOR: DurableObjectNamespace;
 	BATTLE_OPERATOR: DurableObjectNamespace;

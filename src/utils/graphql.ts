@@ -4,14 +4,32 @@ export interface GraphQLClient {
   query<T = any>(query: string, variables?: Record<string, any>): Promise<T>;
 }
 
+// Utility function to create basic auth header
+function createBasicAuthHeader(username: string, password: string): string {
+  const credentials = btoa(`${username}:${password}`);
+  return `Basic ${credentials}`;
+}
+
+// Utility function to build request headers
+function buildGraphQLHeaders(env: Env): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  // Add basic auth if credentials are provided
+  if (env.BASIC_AUTH_USER && env.BASIC_AUTH_PASSWORD) {
+    headers['Authorization'] = createBasicAuthHeader(env.BASIC_AUTH_USER, env.BASIC_AUTH_PASSWORD);
+  }
+
+  return headers;
+}
+
 export function createGraphQLClient(env: Env): GraphQLClient {
   return {
     async query<T = any>(query: string, variables?: Record<string, any>): Promise<T> {
       const response = await fetch(env.GRAPHQL_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: buildGraphQLHeaders(env),
         body: JSON.stringify({
           query,
           variables,

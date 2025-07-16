@@ -119,11 +119,11 @@ export class ZigguratOperator extends Operator {
 
   // Override logging methods to maintain ziggurat-specific naming
   protected log(...args: any[]): void {
-    // console.log({
-    //   origin: "ZIGGURAT_OPERATOR",
-    //   zigguratAddress: this.zigguratAddress,
-    //   ...args
-    // });
+    console.log({
+      origin: "ZIGGURAT_OPERATOR",
+      zigguratAddress: this.zigguratAddress,
+      ...args
+    });
   }
 
   protected error(...args: any[]): void {
