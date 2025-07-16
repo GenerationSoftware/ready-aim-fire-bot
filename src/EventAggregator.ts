@@ -1,6 +1,7 @@
 import { Env } from "./Env";
-import { createPublicClient, webSocket } from "viem";
+import { createPublicClient } from "viem";
 import { arbitrum } from "viem/chains";
+import { createAuthenticatedWebSocketTransport } from "./utils/rpc";
 
 interface EventRegistration {
   operatorId: string;
@@ -88,17 +89,7 @@ export class EventAggregator {
     try {
       console.log("Setting up EventAggregator WebSocket connection");
       
-      // Convert HTTP URL to WebSocket URL if needed
-      let wsUrl = this.env.ETH_RPC_URL;
-      if (wsUrl.startsWith('http://')) {
-        wsUrl = wsUrl.replace('http://', 'ws://');
-      } else if (wsUrl.startsWith('https://')) {
-        wsUrl = wsUrl.replace('https://', 'wss://');
-      }
-      
-      console.log("Using WebSocket URL:", wsUrl);
-      
-      const transport = webSocket(wsUrl, {
+      const transport = createAuthenticatedWebSocketTransport(this.env.ETH_RPC_URL, this.env, {
         keepAlive: true,
         reconnect: {
           auto: true,
@@ -114,7 +105,7 @@ export class EventAggregator {
         onError: (error: any) => {
           console.error("EventAggregator WebSocket error:", error);
         }
-      } as any);
+      });
 
       this.wsClient = createPublicClient({
         chain: arbitrum,
