@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "es2021",
+    "lib": ["es2021"],
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "allowJs": true,
+    "checkJs": false,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "isolatedModules": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": ["src/index.ts", "src/node/**/*", "src/utils/**/*", "src/forwarder/**/*", "src/contracts/**/*"],
+  "exclude": [
+    "src/cloudflare/**/*",
+    "src/Operator.ts",
+    "src/OperatorManager.ts", 
+    "src/CharacterOperator.ts",
+    "src/BattleOperator.ts",
+    "src/ZigguratOperator.ts",
+    "src/EventAggregator.ts",
+    "src/Env.ts",
+    "src/**/*.test.ts",
+    "src/**/*.spec.ts"
+  ]
+}

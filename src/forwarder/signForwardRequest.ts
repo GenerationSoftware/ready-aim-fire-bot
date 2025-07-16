@@ -3,7 +3,12 @@ import { ERC2771ForwarderABI } from './ERC2771ForwarderABI';
 import { createPublicClient } from 'viem';
 import { arbitrum } from 'viem/chains';
 import { createAuthenticatedHttpTransport } from '../utils/rpc';
-import type { Env } from '../Env';
+
+interface AuthConfig {
+	BASIC_AUTH_USER?: string;
+	BASIC_AUTH_PASSWORD?: string;
+	ETH_RPC_URL?: string;
+}
 
 export interface ForwardRequestData {
 	from: Address;
@@ -21,7 +26,7 @@ export async function signForwardRequest(
 	forwarderAddress: Address,
 	request: Omit<ForwardRequestData, 'signature'>,
 	rpcUrl: string,
-	env: Env
+	env: AuthConfig
 ): Promise<Hash> {
 	// Create public client for reading contract state
 	const publicClient = createPublicClient({

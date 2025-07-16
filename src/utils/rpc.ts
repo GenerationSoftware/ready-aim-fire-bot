@@ -1,7 +1,15 @@
 import { http, webSocket, type HttpTransport, type WebSocketTransport } from 'viem';
-import type { Env } from '../Env';
+import { createLogger } from './logger';
 
-export function createAuthenticatedHttpTransport(url: string, env: Env): HttpTransport {
+interface AuthConfig {
+  BASIC_AUTH_USER?: string;
+  BASIC_AUTH_PASSWORD?: string;
+  ETH_RPC_URL?: string;
+}
+
+const logger = createLogger({ operator: 'RPC' });
+
+export function createAuthenticatedHttpTransport(url: string, env: AuthConfig): HttpTransport {
   const headers: Record<string, string> = {};
   
   if (env.BASIC_AUTH_USER && env.BASIC_AUTH_PASSWORD) {
@@ -16,7 +24,7 @@ export function createAuthenticatedHttpTransport(url: string, env: Env): HttpTra
   });
 }
 
-export function createAuthenticatedWebSocketTransport(url: string, env: Env, options?: any): WebSocketTransport {
+export function createAuthenticatedWebSocketTransport(url: string, env: AuthConfig, options?: any): WebSocketTransport {
   const headers: Record<string, string> = {};
   
   if (env.BASIC_AUTH_USER && env.BASIC_AUTH_PASSWORD) {
@@ -31,6 +39,8 @@ export function createAuthenticatedWebSocketTransport(url: string, env: Env, opt
   } else if (wsUrl.startsWith('https://')) {
     wsUrl = wsUrl.replace('https://', 'wss://');
   }
+  
+  logger.debug({ url: wsUrl }, 'Creating WebSocket transport');
   
   return webSocket(wsUrl, {
     ...options,

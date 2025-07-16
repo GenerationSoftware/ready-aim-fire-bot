@@ -20,3 +20,7 @@ export const CONTRACT_ADDRESSES = {
   ZIGGURAT_SINGLETON: getContractAddress('ZigguratSingleton'),
   ZIGGURAT: getContractAddress('Ziggurat'),
 } as const;
+
+export function getDeployments() {
+  return CONTRACT_ADDRESSES;
+}

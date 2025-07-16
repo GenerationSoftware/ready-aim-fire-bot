@@ -3,11 +3,16 @@ import { ERC2771ForwarderABI } from "./ERC2771ForwarderABI";
 import { signForwardRequest } from "./signForwardRequest";
 import { arbitrum } from "viem/chains";
 import { createAuthenticatedHttpTransport } from "../utils/rpc";
-import type { Env } from "../Env";
 
 interface RelayerResponse {
   transactionHash: Hash;
   error?: string;
+}
+
+interface AuthConfig {
+  BASIC_AUTH_USER?: string;
+  BASIC_AUTH_PASSWORD?: string;
+  ETH_RPC_URL?: string;
 }
 
 export interface ForwardTransactionParams {
@@ -18,7 +23,7 @@ export interface ForwardTransactionParams {
   deadline?: bigint
   rpcUrl: string
   relayerUrl: string
-  env: Env
+  env: AuthConfig
 }
 
 export const forwardTransaction = async (params: ForwardTransactionParams, walletClient: WalletClient, forwarderAddress: Address): Promise<Hash> => {

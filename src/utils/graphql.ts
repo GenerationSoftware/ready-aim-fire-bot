@@ -1,4 +1,12 @@
-import { Env } from "../Env";
+import { createLogger } from './logger';
+
+interface GraphQLConfig {
+  GRAPHQL_URL: string;
+  BASIC_AUTH_USER?: string;
+  BASIC_AUTH_PASSWORD?: string;
+}
+
+const logger = createLogger({ operator: 'GraphQL' });
 
 export interface GraphQLClient {
   query<T = any>(query: string, variables?: Record<string, any>): Promise<T>;
@@ -11,46 +19,53 @@ function createBasicAuthHeader(username: string, password: string): string {
 }
 
 // Utility function to build request headers
-function buildGraphQLHeaders(env: Env): Record<string, string> {
+function buildGraphQLHeaders(config: GraphQLConfig): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
 
   // Add basic auth if credentials are provided
-  if (env.BASIC_AUTH_USER && env.BASIC_AUTH_PASSWORD) {
-    headers['Authorization'] = createBasicAuthHeader(env.BASIC_AUTH_USER, env.BASIC_AUTH_PASSWORD);
+  if (config.BASIC_AUTH_USER && config.BASIC_AUTH_PASSWORD) {
+    headers['Authorization'] = createBasicAuthHeader(config.BASIC_AUTH_USER, config.BASIC_AUTH_PASSWORD);
   }
 
   return headers;
 }
 
-export function createGraphQLClient(env: Env): GraphQLClient {
+export function createGraphQLClient(config: GraphQLConfig): GraphQLClient {
   return {
     async query<T = any>(query: string, variables?: Record<string, any>): Promise<T> {
-      const response = await fetch(env.GRAPHQL_URL, {
-        method: 'POST',
-        headers: buildGraphQLHeaders(env),
-        body: JSON.stringify({
-          query,
-          variables,
-        }),
-      });
+      try {
+        const response = await fetch(config.GRAPHQL_URL, {
+          method: 'POST',
+          headers: buildGraphQLHeaders(config),
+          body: JSON.stringify({
+            query,
+            variables,
+          }),
+        });
 
-      if (!response.ok) {
-        const responseText = await response.text();
-        console.error(`❌ GraphQL HTTP Error: ${response.status} ${response.statusText}`);
-        console.error(`❌ Response body:`, responseText);
-        throw new Error(`GraphQL request failed: ${response.status} ${response.statusText}`);
+        if (!response.ok) {
+          const responseText = await response.text();
+          logger.error({ status: response.status, statusText: response.statusText, responseText }, 'GraphQL HTTP Error');
+          throw new Error(`GraphQL request failed: ${response.status} ${response.statusText}`);
+        }
+
+        const result = await response.json() as { data?: T; errors?: any[] };
+        
+        if (result.errors) {
+          logger.error({ errors: result.errors }, 'GraphQL Query Errors');
+          throw new Error(`GraphQL query error: ${JSON.stringify(result.errors)}`);
+        }
+
+        return result.data as T;
+      } catch (error: any) {
+        if (error.cause?.code === 'ECONNREFUSED') {
+          logger.error({ url: config.GRAPHQL_URL }, 'GraphQL endpoint unavailable');
+          throw new Error(`GraphQL endpoint unavailable: ${config.GRAPHQL_URL}`);
+        }
+        throw error;
       }
-
-      const result = await response.json() as { data?: T; errors?: any[] };
-      
-      if (result.errors) {
-        console.error(`❌ GraphQL Query Errors:`, JSON.stringify(result.errors));
-        throw new Error(`GraphQL query error: ${JSON.stringify(result.errors)}`);
-      }
-
-      return result.data as T;
     },
   };
 }
@@ -94,6 +109,7 @@ export interface Battle {
   currentTurn: string;
   teamAStarts: boolean;
   turnDuration: string;
+  winner?: string | null;
 }
 
 export interface BattlePlayer {
