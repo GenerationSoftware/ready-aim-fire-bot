@@ -248,6 +248,7 @@ export class BattleOperator {
           );
         } catch (error) {
           console.error(error);
+          console.error("I SHOUDL BE ABLE TO SEE THIS");
           this.error("Error forwarding transaction:", error);
           return;
         }
