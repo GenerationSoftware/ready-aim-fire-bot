@@ -247,6 +247,7 @@ export class BattleOperator {
             this.config.erc2771ForwarderAddress as `0x${string}`
           );
         } catch (error) {
+          console.error(error);
           this.error("Error forwarding transaction:", error);
           return;
         }
