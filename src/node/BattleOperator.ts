@@ -132,10 +132,12 @@ export class BattleOperator {
       // Use GraphQL to get battle state and recent turn data
       const graphqlClient = createGraphQLClient({ GRAPHQL_URL: this.config.graphqlUrl });
       
-      // Get battle data from GraphQL
-      const battleResult = await graphqlClient.query<{ battles: { items: Battle[] } }>(GraphQLQueries.getBattlesByGameState);
+      // Get specific battle data from GraphQL
+      const battleResult = await graphqlClient.query<{ battle: Battle | null }>(GraphQLQueries.getBattleById, {
+        battleId: this.config.gameAddress.toLowerCase()
+      });
       
-      const battle = battleResult.battles.items.find(b => b.id.toLowerCase() === this.config.gameAddress.toLowerCase());
+      const battle = battleResult.battle;
       
       if (!battle) {
         this.log("Battle not found in GraphQL, checking contract state");

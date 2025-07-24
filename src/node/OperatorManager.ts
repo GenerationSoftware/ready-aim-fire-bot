@@ -1,7 +1,7 @@
 import { createPublicClient, type Abi } from "viem";
 import { arbitrum } from "viem/chains";
 import BattleABI from "../contracts/abis/Battle.json";
-import { createGraphQLClient, GraphQLQueries, type Battle, type Character, type Ziggurat } from "../utils/graphql";
+import { createGraphQLClient, GraphQLQueries, queryAllPages, type Battle, type Character, type Ziggurat } from "../utils/graphql";
 import { createAuthenticatedHttpTransport } from "../utils/rpc";
 import { CharacterOperator } from "./CharacterOperator";
 import { BattleOperator } from "./BattleOperator";
@@ -42,17 +42,19 @@ export class OperatorManager {
       const graphqlClient = createGraphQLClient({ GRAPHQL_URL: this.config.graphqlUrl });
       
       // Step 1: Get all characters owned by the operator
-      const charactersResult = await graphqlClient.query<{ characters: { items: Character[] } }>(
+      // Get all characters owned by the operator (with pagination)
+      const characters = await queryAllPages<{ items: Character[] }>(
+        graphqlClient,
         GraphQLQueries.getCharactersByOwner,
         { owner: this.config.operatorAddress.toLowerCase() }
       );
 
-      if (!charactersResult.characters.items.length) {
+      if (!characters.length) {
         this.logger.debug("No characters found for operator");
         return;
       }
 
-      const characterIds = charactersResult.characters.items.map(c => c.id);
+      const characterIds = characters.map(c => c.id);
       this.logger.debug(`Found ${characterIds.length} characters for operator`);
 
       // Step 2: Get all active battles where these characters are playing
@@ -113,18 +115,21 @@ export class OperatorManager {
     try {
       const graphqlClient = createGraphQLClient({ GRAPHQL_URL: this.config.graphqlUrl });
       
-      const result = await graphqlClient.query<{ battles: { items: Battle[] } }>(GraphQLQueries.getBattlesWithOperator, {
-        operator: this.config.operatorAddress.toLowerCase()
-      });
+      // Get all battles where we are operator (with pagination)
+      const battles = await queryAllPages<{ items: Battle[] }>(
+        graphqlClient,
+        GraphQLQueries.getBattlesWithOperator,
+        { operator: this.config.operatorAddress.toLowerCase() }
+      );
 
-    this.logger.info(`Found ${result.battles.items.length} battles where we are operator`);
+    this.logger.info(`Found ${battles.length} battles where we are operator`);
 
     const publicClient = createPublicClient({
       chain: arbitrum,
       transport: createAuthenticatedHttpTransport(this.config.ethRpcUrl, { ETH_RPC_URL: this.config.ethRpcUrl })
     });
 
-    const battleAddresses = result.battles.items.map(battle => battle.id);
+    const battleAddresses = battles.map(battle => battle.id);
     
     const gameStateContracts = battleAddresses.map(address => ({
       address: address as `0x${string}`,
@@ -136,7 +141,7 @@ export class OperatorManager {
       contracts: gameStateContracts
     });
 
-    const activeBattles = result.battles.items.filter((battle, index) => {
+    const activeBattles = battles.filter((battle, index) => {
       const response = gameStateResponses[index];
       if (response.status === 'failure') {
         this.logger.error(`Failed to get game state for battle ${battle.id}:`, response.error);

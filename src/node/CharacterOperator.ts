@@ -33,6 +33,7 @@ export class CharacterOperator {
   private lastActionTime: number = 0;
   private eventUnsubscribe?: () => void;
   private logger: Logger;
+  private isExecuting: boolean = false;
 
   constructor(config: CharacterOperatorConfig) {
     this.config = config;
@@ -140,18 +141,27 @@ export class CharacterOperator {
   }
 
   private async executeBotLogic(): Promise<boolean> {
-    this.log('executeBotLogic', {
-      gameAddress: this.config.gameAddress,
-      playerId: this.config.playerId,
-      teamA: this.config.teamA
-    });
-
-    const publicClient = createPublicClient({
-      chain: arbitrum,
-      transport: createAuthenticatedHttpTransport(this.config.ethRpcUrl, { ETH_RPC_URL: this.config.ethRpcUrl })
-    });
-
+    // Prevent concurrent execution
+    if (this.isExecuting) {
+      this.log('Already executing bot logic, skipping...');
+      return true;
+    }
+    
+    this.isExecuting = true;
+    
     try {
+      this.log('executeBotLogic', {
+        gameAddress: this.config.gameAddress,
+        playerId: this.config.playerId,
+        teamA: this.config.teamA
+      });
+
+      const publicClient = createPublicClient({
+        chain: arbitrum,
+        transport: createAuthenticatedHttpTransport(this.config.ethRpcUrl, { ETH_RPC_URL: this.config.ethRpcUrl })
+      });
+
+      try {
       // Check if it's our team's turn using GraphQL for efficiency
       const graphqlClient = createGraphQLClient({ GRAPHQL_URL: this.config.graphqlUrl });
       const battleResult = await graphqlClient.query<{ battles: { items: any[] } }>(GraphQLQueries.getBattlesByGameState);
@@ -193,6 +203,9 @@ export class CharacterOperator {
     } catch (error) {
       this.error("Error in executeBotLogic:", error);
       return true;
+    }
+    } finally {
+      this.isExecuting = false;
     }
   }
 
@@ -332,6 +345,18 @@ export class CharacterOperator {
           attemptedCount: attemptedCardIndices.size
         });
         
+        // Check if it's still our turn before ending
+        const isStillOurTurn = await publicClient.readContract({
+          address: gameAddress,
+          abi: BattleABI as Abi,
+          functionName: 'isTeamATurn'
+        }) as boolean;
+        
+        if (isStillOurTurn !== this.config.teamA) {
+          this.log('Turn has already changed, not ending turn');
+          break;
+        }
+        
         // End the turn
         const endTurnData = encodeFunctionData({
           abi: BattleABI as Abi,
@@ -381,9 +406,8 @@ export class CharacterOperator {
 
       this.log(`Randomly selected card ID ${playableCardId} at hand index ${playableHandIndex}, energy cost: ${energyCost}`);
       
-      // Get enemy players to target
-      const battlePlayers = await this.getBattlePlayers();
-      const enemyPlayers = battlePlayers.filter(p => p.teamA !== this.config.teamA && !p.eliminated);
+      // Get active enemy players to target
+      const enemyPlayers = await this.getActiveEnemyPlayers();
       
       if (enemyPlayers.length === 0) {
         this.log('No enemy players available');
@@ -484,6 +508,15 @@ export class CharacterOperator {
     const graphqlClient = createGraphQLClient({ GRAPHQL_URL: this.config.graphqlUrl });
     const result = await graphqlClient.query<{ battlePlayers: { items: BattlePlayer[] } }>(GraphQLQueries.getBattlePlayers, {
       battleId: this.config.gameAddress.toLowerCase()
+    });
+    return result.battlePlayers.items;
+  }
+
+  private async getActiveEnemyPlayers(): Promise<BattlePlayer[]> {
+    const graphqlClient = createGraphQLClient({ GRAPHQL_URL: this.config.graphqlUrl });
+    const result = await graphqlClient.query<{ battlePlayers: { items: BattlePlayer[] } }>(GraphQLQueries.getActiveEnemyPlayers, {
+      battleId: this.config.gameAddress.toLowerCase(),
+      isTeamA: this.config.teamA
     });
     return result.battlePlayers.items;
   }

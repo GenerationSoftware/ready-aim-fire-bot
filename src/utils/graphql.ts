@@ -70,6 +70,62 @@ export function createGraphQLClient(config: GraphQLConfig): GraphQLClient {
   };
 }
 
+// Pagination utility for queries that return lists
+// Uses cursor-based pagination with 'after' parameter
+export async function queryAllPages<T extends { items: any[] }>(
+  client: GraphQLClient,
+  query: string,
+  variables: Record<string, any> = {},
+  pageSize: number = 100
+): Promise<T['items']> {
+  const allItems: T['items'] = [];
+  let afterCursor: string | undefined = undefined;
+  let hasMore = true;
+  let totalFetched = 0;
+
+  while (hasMore) {
+    // Add pagination variables
+    const paginatedVariables: Record<string, any> = {
+      ...variables,
+      limit: pageSize,
+      ...(afterCursor ? { after: afterCursor } : {})
+    };
+
+    const result: { [key: string]: T } = await client.query<{ [key: string]: T }>(query, paginatedVariables);
+    
+    // Find the first result that has an items array
+    const resultKey = Object.keys(result).find(key => 
+      result[key] && Array.isArray((result[key] as any).items)
+    );
+    
+    if (!resultKey) {
+      logger.error({ result }, 'No items array found in query result');
+      break;
+    }
+
+    const items: T['items'] = (result[resultKey] as T).items;
+    allItems.push(...items);
+    totalFetched += items.length;
+
+    // Check if we got less than a full page
+    hasMore = items.length === pageSize;
+    
+    // Get the last item's ID as the cursor for the next page
+    if (hasMore && items.length > 0) {
+      const lastItem: any = items[items.length - 1];
+      afterCursor = lastItem.id || lastItem.address || JSON.stringify(lastItem);
+    }
+
+    // Safety check to prevent infinite loops
+    if (totalFetched > 10000) {
+      logger.warn('Pagination safety limit reached (10000 items)');
+      break;
+    }
+  }
+
+  return allItems;
+}
+
 // GraphQL types based on schema introspection
 export enum PartyState {
   CREATED,
@@ -144,11 +200,13 @@ export interface Ziggurat {
 }
 
 // Query helpers
+// NOTE: All queries that return lists use cursor-based pagination with $limit and $after parameters
+// Use the queryAllPages utility function when you need to fetch all results
 export const GraphQLQueries = {
   // Ziggurat queries
   getPartiesByZigguratWithStateDoorChosen: `
-    query GetPartiesByZiggurat($zigguratAddress: String!) {
-      partys(where: { zigguratAddress: $zigguratAddress, state: "1" }) {
+    query GetPartiesByZiggurat($zigguratAddress: String!, $limit: Int, $after: String) {
+      partys(where: { zigguratAddress: $zigguratAddress, state: "1" }, limit: $limit, after: $after) {
         items {
           id
           zigguratAddress
@@ -264,18 +322,49 @@ export const GraphQLQueries = {
     }
   `,
 
+  getBattleById: `
+    query GetBattleById($battleId: String!) {
+      battle(id: $battleId) {
+        id
+        gameStartedAt
+        currentTurn
+        teamAStarts
+        turnDuration
+        winner
+      }
+    }
+  `,
+
   getBattlePlayers: `
-    query GetBattlePlayers($battleId: String!) {
-      battlePlayers(where: { id_starts_with: $battleId }) {
+    query GetBattlePlayers($battleId: String!, $limit: Int = 100, $after: String) {
+      battlePlayers(where: { id_starts_with: $battleId }, limit: $limit, after: $after) {
         items {
           id
           playerId
           teamA
+          eliminated
           character {
             id
             name
             owner
             operator
+          }
+        }
+      }
+    }
+  `,
+
+  getActiveEnemyPlayers: `
+    query GetActiveEnemyPlayers($battleId: String!, $isTeamA: Boolean!) {
+      battlePlayers(where: { id_starts_with: $battleId, teamA_not: $isTeamA, eliminated: false }) {
+        items {
+          id
+          playerId
+          teamA
+          eliminated
+          character {
+            id
+            name
           }
         }
       }
@@ -298,8 +387,8 @@ export const GraphQLQueries = {
 
   // OperatorManager queries
   getBattlesWithOperator: `
-    query GetBattlesWithOperator($operator: String!) {
-      battles(where: { operator: $operator }, limit: 1000) {
+    query GetBattlesWithOperator($operator: String!, $limit: Int = 100, $after: String) {
+      battles(where: { operator: $operator, winner: null }, limit: $limit, after: $after) {
         items {
           id
           operator
@@ -307,6 +396,7 @@ export const GraphQLQueries = {
           currentTurn
           teamAStarts
           turnDuration
+          winner
         }
       }
     }
@@ -340,8 +430,8 @@ export const GraphQLQueries = {
   `,
 
   getCharactersByOwner: `
-    query GetCharactersByOwner($owner: String!) {
-      characters(where: { owner: $owner }) {
+    query GetCharactersByOwner($owner: String!, $limit: Int = 100, $after: String) {
+      characters(where: { owner: $owner }, limit: $limit, after: $after) {
         items {
           id
           name

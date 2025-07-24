@@ -160,9 +160,17 @@ The GraphQL indexer at `GRAPHQL_URL` provides the following main entity types:
 
 **Query Patterns:**
 - Use `where` filters for targeted queries (e.g., `where: { operator: $address }`)
-- Pagination via `limit`, `orderBy`, `orderDirection`
+- Cursor-based pagination via `limit`, `after`, `before` (NOT offset-based `skip`)
+- Standard query arguments: `where`, `orderBy`, `orderDirection`, `before`, `after`, `limit`
 - Nested relationship queries (e.g., `battle { players { character } }`)
 - String matching with `_starts_with`, `_not`, `_gt`, etc.
+- All list queries return results wrapped in `{ items: [...] }` structure
+
+**Pagination:**
+- The indexer uses cursor-based pagination, not offset-based
+- Use `after` parameter with the last item's ID from previous page
+- Use `limit` to control page size (default varies by entity type)
+- The `queryAllPages` utility function handles pagination automatically
 
 ### Common Issues
 
