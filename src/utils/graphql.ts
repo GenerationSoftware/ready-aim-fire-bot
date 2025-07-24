@@ -230,7 +230,7 @@ export const GraphQLQueries = {
 
   getSpecificPartyByZiggurat: `
     query GetSpecificPartyByZiggurat($zigguratAddress: String!, $partyId: String!) {
-      partys(where: { zigguratAddress: $zigguratAddress, partyId: $partyId, state: "1" }) {
+      partys(where: { zigguratAddress: $zigguratAddress, partyId: $partyId}) {
         items {
           id
           zigguratAddress

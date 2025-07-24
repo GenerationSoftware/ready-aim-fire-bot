@@ -159,17 +159,17 @@ export class CharacterOperator {
       const battle = battleResult.battles.items.find(b => b.id.toLowerCase() === this.config.gameAddress.toLowerCase());
       
       if (!battle) {
-        this.log("Battle not found for game address", this.config.gameAddress);
+        this.log("Battle not found for game address " + this.config.gameAddress);
         return false;
       }
 
       if (battle.winner != null) {
-        this.log("Battle already finished with winner", battle.winner, "for game address", this.config.gameAddress);
+        this.log("Battle already finished with winner " + battle.winner + " for game address " + this.config.gameAddress);
         return false;
       }
 
       if (!battle.gameStartedAt) {
-        this.log("Battle has not started yet", battle.id);
+        this.log("Battle has not started yet " + battle.id);
         return true;
       }
 
@@ -320,9 +320,17 @@ export class CharacterOperator {
         }
       }
 
-      // If no cards can be played, end the turn
-      if (playableCards.length === 0) {
-        this.log('No playable cards with current energy:', currentEnergy);
+      // Filter out cards we've already attempted
+      const untriedPlayableCards = playableCards.filter(card => !attemptedCardIndices.has(card.cardId));
+      
+      // If no cards can be played or all playable cards have been tried, end the turn
+      if (playableCards.length === 0 || untriedPlayableCards.length === 0) {
+        this.log('No more playable cards:', {
+          currentEnergy,
+          playableCardsCount: playableCards.length,
+          untriedCount: untriedPlayableCards.length,
+          attemptedCount: attemptedCardIndices.size
+        });
         
         // End the turn
         const endTurnData = encodeFunctionData({
@@ -362,8 +370,8 @@ export class CharacterOperator {
         break;
       }
 
-      // Randomly select a card from the playable cards
-      const selectedCard = playableCards[Math.floor(Math.random() * playableCards.length)];
+      // Randomly select a card from the untried playable cards
+      const selectedCard = untriedPlayableCards[Math.floor(Math.random() * untriedPlayableCards.length)];
       const playableCardId = selectedCard.cardId;
       const playableHandIndex = selectedCard.handIndex;
       const energyCost = selectedCard.energyCost;
@@ -437,13 +445,15 @@ export class CharacterOperator {
         this.lastActionTime = Date.now();
       } catch (error: any) {
         if (error.message?.includes('CardNotInHandError')) {
-          // This should never happen with proper tracking
-          this.error('Unexpected CardNotInHandError - this indicates a bug in the card tracking logic', {
+          // This can happen if there's a race condition or state mismatch
+          this.error('CardNotInHandError - marking card as attempted and continuing', {
             playableHandIndex,
             playableCardId,
             attemptedIndices: Array.from(attemptedCardIndices)
           });
-          break; // Exit to prevent further issues
+          // Continue to next iteration instead of breaking - this allows us to try other cards
+          // The attempted card is already marked, so we won't try it again
+          continue;
         } else if (error.message?.includes('GameHasNotStartedError')) {
           this.log('Game has ended, stopping card play');
           break;
