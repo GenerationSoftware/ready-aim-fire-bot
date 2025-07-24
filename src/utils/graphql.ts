@@ -312,6 +312,73 @@ export const GraphQLQueries = {
     }
   `,
 
+  getActiveBattlesWithPlayers: `
+    query GetActiveBattlesWithPlayers {
+      battles(where: { gameStartedAt_not: null, winner: null }, limit: 100) {
+        items {
+          id
+          gameStartedAt
+          currentTurn
+          winner
+          players {
+            items {
+              id
+              playerId
+              teamA
+              eliminated
+              character {
+                id
+                name
+                owner
+                operator
+              }
+            }
+          }
+        }
+      }
+    }
+  `,
+
+  getCharactersByOwner: `
+    query GetCharactersByOwner($owner: String!) {
+      characters(where: { owner: $owner }) {
+        items {
+          id
+          name
+          owner
+          operator
+        }
+      }
+    }
+  `,
+
+  getActiveBattlesForCharacters: `
+    query GetActiveBattlesForCharacters($characterIds: [String!]!) {
+      battles(where: { gameStartedAt_not: null, gameEndedAt: null }, limit: 100) {
+        items {
+          id
+          gameStartedAt
+          currentTurn
+          winner
+          players(where: { character_in: $characterIds }) {
+            items {
+              id
+              playerId
+              teamA
+              eliminated
+              character {
+                id
+                name
+                owner
+                operator
+              }
+            }
+          }
+        }
+      }
+    }
+  `,
+
   // Alternative query to find all active battles (for debugging)
   getAllActiveBattles: `
     query GetAllActiveBattles {

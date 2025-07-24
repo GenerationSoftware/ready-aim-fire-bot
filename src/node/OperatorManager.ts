@@ -40,48 +40,65 @@ export class OperatorManager {
     this.logger.debug("Checking character operators...");
     try {
       const graphqlClient = createGraphQLClient({ GRAPHQL_URL: this.config.graphqlUrl });
-      const result = await graphqlClient.query<{ characters: { items: Character[] } }>(GraphQLQueries.getMonsters, {
-        owner: this.config.operatorAddress.toLowerCase()
-      });
+      
+      // Step 1: Get all characters owned by the operator
+      const charactersResult = await graphqlClient.query<{ characters: { items: Character[] } }>(
+        GraphQLQueries.getCharactersByOwner,
+        { owner: this.config.operatorAddress.toLowerCase() }
+      );
 
-      let totalBattlePlayers = 0;
+      if (!charactersResult.characters.items.length) {
+        this.logger.debug("No characters found for operator");
+        return;
+      }
 
-    for (const character of result.characters.items) {
-      if (!character.battlePlayers?.items) continue;
+      const characterIds = charactersResult.characters.items.map(c => c.id);
+      this.logger.debug(`Found ${characterIds.length} characters for operator`);
 
-      for (const battlePlayer of character.battlePlayers.items) {
-        totalBattlePlayers++;
-        const battle = battlePlayer.battle;
+      // Step 2: Get all active battles where these characters are playing
+      const battlesResult = await graphqlClient.query<{ battles: { items: any[] } }>(
+        GraphQLQueries.getActiveBattlesForCharacters,
+        { characterIds }
+      );
 
-        if (!battle.gameStartedAt || battle.winner != null) {
-          continue;
-        }
+      let foundCharacters = 0;
 
-        const operatorKey = `${battle.id}-${battlePlayer.playerId}`;
-        let operator = this.characterOperators.get(operatorKey);
+      for (const battle of battlesResult.battles.items) {
+        if (!battle.players?.items) continue;
 
-        if (!operator || !operator.isAlive()) {
-          if (operator) {
-            this.logger.info(`CharacterOperator ${operatorKey} is dead, restarting...`);
-            operator.stop();
+        for (const player of battle.players.items) {
+          if (!player.character) continue;
+
+          foundCharacters++;
+          const operatorKey = `${battle.id}-${player.playerId}`;
+          let operator = this.characterOperators.get(operatorKey);
+
+          if (!operator || !operator.isAlive()) {
+            if (operator) {
+              this.logger.info(`CharacterOperator ${operatorKey} is dead, restarting...`);
+              operator.stop();
+            }
+
+            operator = new CharacterOperator({
+              ...this.config,
+              gameAddress: battle.id,
+              playerId: player.playerId,
+              teamA: player.teamA,
+              eventAggregator: this.eventAggregator
+            });
+
+            this.characterOperators.set(operatorKey, operator);
+            operator.start();
+            this.logger.info(`Started CharacterOperator for ${operatorKey} (${player.character.name})`);
+          } else {
+            this.logger.info(`CharacterOperator running for ${operatorKey}`);
           }
-
-          operator = new CharacterOperator({
-            ...this.config,
-            gameAddress: battle.id,
-            playerId: battlePlayer.playerId,
-            teamA: battlePlayer.teamA,
-            eventAggregator: this.eventAggregator
-          });
-
-          this.characterOperators.set(operatorKey, operator);
-          operator.start();
-          this.logger.info(`Started CharacterOperator for ${operatorKey}`);
-        } else {
-          this.logger.info(`CharacterOperator running for ${operatorKey}`);
         }
       }
-    }
+
+      if (foundCharacters === 0) {
+        this.logger.debug("No characters found in active battles");
+      }
     } catch (error: any) {
       if (error.message?.includes('GraphQL endpoint unavailable')) {
         this.logger.error("GraphQL endpoint is not available. Please ensure the indexer is running.");
