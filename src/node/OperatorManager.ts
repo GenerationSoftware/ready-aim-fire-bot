@@ -70,7 +70,8 @@ export class OperatorManager {
             ...this.config,
             gameAddress: battle.id,
             playerId: battlePlayer.playerId,
-            teamA: battlePlayer.teamA
+            teamA: battlePlayer.teamA,
+            eventAggregator: this.eventAggregator
           });
 
           this.characterOperators.set(operatorKey, operator);
@@ -183,7 +184,8 @@ export class OperatorManager {
 
         operator = new ZigguratOperator({
           ...this.config,
-          zigguratAddress: zigAddress
+          zigguratAddress: zigAddress,
+          eventAggregator: this.eventAggregator
         });
 
         this.zigguratOperators.set(zigAddress, operator);

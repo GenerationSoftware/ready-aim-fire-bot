@@ -7,6 +7,7 @@ import { createGraphQLClient, GraphQLQueries, type BattlePlayer } from "../utils
 import { getPlayerEnergy } from "../utils/playerStats";
 import { cardPileBitsToArray } from "../utils/cardPiles";
 import { createAuthenticatedHttpTransport } from "../utils/rpc";
+import { EventAggregator } from "./EventAggregator";
 import { createLogger } from "../utils/logger";
 import type { Logger } from "pino";
 
@@ -21,6 +22,7 @@ export interface CharacterOperatorConfig {
   gameAddress: string;
   playerId: string;
   teamA: boolean;
+  eventAggregator: EventAggregator;
 }
 
 export class CharacterOperator {
@@ -29,6 +31,7 @@ export class CharacterOperator {
   private isRunning: boolean = false;
   private lastCheckTime: number = 0;
   private lastActionTime: number = 0;
+  private eventUnsubscribe?: () => void;
   private logger: Logger;
 
   constructor(config: CharacterOperatorConfig) {
@@ -57,6 +60,26 @@ export class CharacterOperator {
     this.isRunning = true;
     this.log("Starting...");
 
+    // Subscribe to NextTurnEvent
+    this.eventUnsubscribe = this.config.eventAggregator.subscribe({
+      eventName: "NextTurnEvent",
+      abi: BattleABI as any[],
+      address: this.config.gameAddress,
+      onEvent: async (logs: any[]) => {
+        this.log(`NextTurnEvent triggered with ${logs.length} logs`);
+        for (const log of logs) {
+          this.log("NextTurnEvent details:", {
+            address: log.address,
+            turn: log.args?.turn?.toString(),
+            team: log.args?.teamATurn ? "A" : "B",
+            isOurTurn: log.args?.teamATurn === this.config.teamA
+          });
+        }
+        // Trigger turn check immediately when it's our turn
+        this.performPeriodicCheck();
+      }
+    });
+
     // Initial check
     this.performPeriodicCheck();
 
@@ -74,6 +97,12 @@ export class CharacterOperator {
 
     this.log("Stopping...");
     this.isRunning = false;
+
+    // Unsubscribe from events
+    if (this.eventUnsubscribe) {
+      this.eventUnsubscribe();
+      this.eventUnsubscribe = undefined;
+    }
 
     if (this.intervalId) {
       clearInterval(this.intervalId);
@@ -183,6 +212,13 @@ export class CharacterOperator {
       return;
     }
 
+    // Get current turn
+    const currentTurn = await publicClient.readContract({
+      address: gameAddress,
+      abi: BattleABI as Abi,
+      functionName: 'currentTurn'
+    }) as bigint;
+
     // Get current energy
     const playerStats = await publicClient.readContract({
       address: gameAddress,
@@ -211,18 +247,38 @@ export class CharacterOperator {
     let handCards = cardPileBitsToArray(handBits);
     this.log('Hand cards:', handCards);
 
-    // Play cards while we have energy
-    let actionsThisTurn = 0;
-    const maxActionsPerTurn = 5;
+    // Calculate energy requirements for all cards at the beginning
+    const cardEnergyRequirements: Map<number, bigint> = new Map();
+    for (let i = 0; i < handCards.length; i++) {
+      const energyRequired = await publicClient.readContract({
+        address: gameAddress,
+        abi: BattleABI as Abi,
+        functionName: 'energyRequired',
+        args: [playerId, BigInt(i)]
+      }) as bigint;
+      cardEnergyRequirements.set(i, energyRequired);
+      this.log(`Card ${handCards[i]} at index ${i} requires ${energyRequired} energy`);
+    }
 
+    // Play cards while turn has not ended
+    let actionsThisTurn = 0;
+    const attemptedCardIndices = new Set<number>(); // Track which cards we've tried
+    
     this.log('Starting card play loop:', {
       currentEnergy,
       handCardsLength: handCards.length,
       actionsThisTurn,
-      maxActionsPerTurn
     });
     
-    while (currentEnergy > 0n && handCards.length > 0 && actionsThisTurn < maxActionsPerTurn) {
+    // Check if turn has ended
+    let hasEndedTurn = await publicClient.readContract({
+      address: gameAddress,
+      abi: BattleABI as Abi,
+      functionName: 'playerEndedTurn',
+      args: [playerId, currentTurn]
+    }) as boolean;
+    
+    while (!hasEndedTurn) {
       // Re-read hand state before each card play
       const freshCardPileState = await publicClient.readContract({
         address: gameAddress,
@@ -240,41 +296,82 @@ export class CharacterOperator {
         break;
       }
 
-      // Find the first card we can afford to play
-      let playableCardId = -1;
-      let playableHandIndex = -1;
+      // Find all playable cards (those we can afford with current energy and haven't tried yet)
+      const playableCards: { handIndex: number; cardId: number; energyCost: bigint }[] = [];
       
-      for (let i = 0; i < handCards.length; i++) {
-        const cardId = handCards[i];
+      for (let handIndex = 0; handIndex < handCards.length; handIndex++) {
+        const cardId = handCards[handIndex];
+        
+        // Skip cards we've already attempted this turn (by card ID, not hand index)
+        if (attemptedCardIndices.has(cardId)) {
+          continue;
+        }
+        
+        // Get the current energy requirement for this hand position
         const energyRequired = await publicClient.readContract({
           address: gameAddress,
           abi: BattleABI as Abi,
           functionName: 'energyRequired',
-          args: [playerId, BigInt(i)]
+          args: [playerId, BigInt(handIndex)]
         }) as bigint;
 
-        this.log(`Checking card ${cardId} at hand index ${i}: energy required=${energyRequired}, current energy=${currentEnergy}`);
-
         if (energyRequired <= currentEnergy) {
-          playableCardId = cardId;
-          playableHandIndex = i;
-          break;
+          playableCards.push({ handIndex, cardId, energyCost: energyRequired });
         }
       }
 
-      if (playableHandIndex === -1) {
+      // If no cards can be played, end the turn
+      if (playableCards.length === 0) {
         this.log('No playable cards with current energy:', currentEnergy);
+        
+        // End the turn
+        const endTurnData = encodeFunctionData({
+          abi: BattleABI as Abi,
+          functionName: 'endTurn',
+          args: [playerId]
+        });
+
+        const account = privateKeyToAccount(this.config.operatorPrivateKey as `0x${string}`);
+        const walletClient = createWalletClient({
+          account,
+          chain: arbitrum,
+          transport: createAuthenticatedHttpTransport(this.config.ethRpcUrl, { ETH_RPC_URL: this.config.ethRpcUrl })
+        });
+
+        try {
+          const hash = await forwardTransaction(
+            {
+              to: gameAddress,
+              data: endTurnData,
+              rpcUrl: this.config.ethRpcUrl,
+              relayerUrl: this.config.relayerUrl,
+              env: { ETH_RPC_URL: this.config.ethRpcUrl } as any
+            },
+            walletClient,
+            this.config.erc2771ForwarderAddress as `0x${string}`
+          );
+          this.log(`Ended turn (no playable cards), tx: ${hash}`);
+          await publicClient.waitForTransactionReceipt({ hash });
+        } catch (error: any) {
+          if (error.message?.includes('GameHasNotStartedError')) {
+            this.log('Game has ended, cannot end turn');
+          } else {
+            throw error;
+          }
+        }
         break;
       }
 
-      const energyCost = await publicClient.readContract({
-        address: gameAddress,
-        abi: BattleABI as Abi,
-        functionName: 'energyRequired',
-        args: [playerId, BigInt(playableHandIndex)]
-      }) as bigint;
+      // Randomly select a card from the playable cards
+      const selectedCard = playableCards[Math.floor(Math.random() * playableCards.length)];
+      const playableCardId = selectedCard.cardId;
+      const playableHandIndex = selectedCard.handIndex;
+      const energyCost = selectedCard.energyCost;
 
-      this.log(`Playing card ID ${playableCardId} at hand index ${playableHandIndex}, energy cost: ${energyCost}`);
+      // Mark this card as attempted (by card ID, not hand index)
+      attemptedCardIndices.add(playableCardId);
+
+      this.log(`Randomly selected card ID ${playableCardId} at hand index ${playableHandIndex}, energy cost: ${energyCost}`);
       
       // Get enemy players to target
       const battlePlayers = await this.getBattlePlayers();
@@ -300,7 +397,6 @@ export class CharacterOperator {
       });
 
       const account = privateKeyToAccount(this.config.operatorPrivateKey as `0x${string}`);
-      this.log("Using operator address:", account.address);
       const walletClient = createWalletClient({
         account,
         chain: arbitrum,
@@ -341,85 +437,39 @@ export class CharacterOperator {
         this.lastActionTime = Date.now();
       } catch (error: any) {
         if (error.message?.includes('CardNotInHandError')) {
-          this.log('Card no longer in hand, continuing with other cards');
-          continue;
+          // This should never happen with proper tracking
+          this.error('Unexpected CardNotInHandError - this indicates a bug in the card tracking logic', {
+            playableHandIndex,
+            playableCardId,
+            attemptedIndices: Array.from(attemptedCardIndices)
+          });
+          break; // Exit to prevent further issues
         } else if (error.message?.includes('GameHasNotStartedError')) {
           this.log('Game has ended, stopping card play');
+          break;
+        } else if (error.message?.includes('InsufficientEnergyError')) {
+          this.log('Insufficient energy for card, this should not happen with proper energy checking');
           break;
         } else {
           this.log('Error playing card:', error);
           throw error;
         }
       }
-    }
-
-    // Check if game is still active before ending turn
-    const currentWinner = await publicClient.readContract({
-      address: gameAddress,
-      abi: BattleABI as Abi,
-      functionName: 'winner'
-    }) as any;
-
-    if (currentWinner !== 0n) {
-      this.log('Game has ended, skipping end turn');
-      return;
-    }
-
-    // End turn if we haven't already
-    const currentTurn = await publicClient.readContract({
-      address: gameAddress,
-      abi: BattleABI as Abi,
-      functionName: 'currentTurn'
-    }) as bigint;
-
-    const hasEndedTurn = await publicClient.readContract({
-      address: gameAddress,
-      abi: BattleABI as Abi,
-      functionName: 'playerEndedTurn',
-      args: [playerId, currentTurn]
-    }) as boolean;
-
-    if (!hasEndedTurn) {
-      this.log('Ending turn');
       
-      const endTurnData = encodeFunctionData({
+      // Check if turn has ended after playing card
+      hasEndedTurn = await publicClient.readContract({
+        address: gameAddress,
         abi: BattleABI as Abi,
-        functionName: 'endTurn',
-        args: [playerId]
-      });
-
-      const account = privateKeyToAccount(this.config.operatorPrivateKey as `0x${string}`);
-      const walletClient = createWalletClient({
-        account,
-        chain: arbitrum,
-        transport: createAuthenticatedHttpTransport(this.config.ethRpcUrl, { ETH_RPC_URL: this.config.ethRpcUrl })
-      });
-
-      try {
-        const hash = await forwardTransaction(
-          {
-            to: gameAddress,
-            data: endTurnData,
-            rpcUrl: this.config.ethRpcUrl,
-            relayerUrl: this.config.relayerUrl,
-            env: { ETH_RPC_URL: this.config.ethRpcUrl } as any
-          },
-          walletClient,
-          this.config.erc2771ForwarderAddress as `0x${string}`
-        );
-
-        this.log(`Ended turn, tx: ${hash}`);
-        await publicClient.waitForTransactionReceipt({ hash });
-      } catch (error: any) {
-        if (error.message?.includes('GameHasNotStartedError')) {
-          this.log('Game has ended, cannot end turn');
-        } else {
-          throw error;
-        }
-      }
+        functionName: 'playerEndedTurn',
+        args: [playerId, currentTurn]
+      }) as boolean;
     }
-  }
 
+    // Turn should be ended by now, either explicitly when no cards could be played
+    // or automatically by the contract when energy is depleted
+    this.log('Turn play completed');
+  }
+  
   private async getBattlePlayers(): Promise<BattlePlayer[]> {
     const graphqlClient = createGraphQLClient({ GRAPHQL_URL: this.config.graphqlUrl });
     const result = await graphqlClient.query<{ battlePlayers: { items: BattlePlayer[] } }>(GraphQLQueries.getBattlePlayers, {

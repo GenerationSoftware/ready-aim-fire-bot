@@ -127,11 +127,14 @@ export const forwardTransaction = async (params: ForwardTransactionParams, walle
       result = JSON.parse(responseText) as RelayerResponse
     } catch (error) {
       console.error('Failed to parse relayer response:', error)
+      console.error('Response text:', responseText)
       throw new Error(`Invalid response from relayer: ${responseText.substring(0, 200)}...`)
     }
 
     if (!response.ok) {
-      throw new Error(result.error || 'Failed to forward transaction')
+      console.error('Relayer error response:', result)
+      console.error('Full response text:', responseText)
+      throw new Error(result.error || `Failed to forward transaction: ${responseText}`)
     }
 
     if (!result.transactionHash) {

@@ -8,6 +8,8 @@ import { createAuthenticatedHttpTransport } from "../utils/rpc";
 import { createLogger } from "../utils/logger";
 import type { Logger } from "pino";
 
+import type { EventAggregator } from "./EventAggregator";
+
 export interface ZigguratOperatorConfig {
   ethRpcUrl: string;
   ethWsRpcUrl: string;
@@ -17,6 +19,7 @@ export interface ZigguratOperatorConfig {
   relayerUrl: string;
   erc2771ForwarderAddress: string;
   zigguratAddress: string;
+  eventAggregator: EventAggregator;
 }
 
 export class ZigguratOperator {
@@ -25,6 +28,9 @@ export class ZigguratOperator {
   private isRunning: boolean = false;
   private lastCheckTime: number = 0;
   private logger: Logger;
+  private eventUnsubscribes: Array<() => void> = [];
+  private processingParties: Set<string> = new Set(); // Track parties being processed
+  private recentlyProcessedParties: Map<string, number> = new Map(); // Track recently processed parties with timestamp
 
   constructor(config: ZigguratOperatorConfig) {
     this.config = config;
@@ -56,6 +62,9 @@ export class ZigguratOperator {
     this.isRunning = true;
     this.log("Starting...");
 
+    // Subscribe to events
+    this.subscribeToEvents();
+
     // Initial check
     this.performPeriodicCheck();
 
@@ -63,6 +72,128 @@ export class ZigguratOperator {
     this.intervalId = setInterval(() => {
       this.performPeriodicCheck();
     }, 5000);
+  }
+
+  private subscribeToEvents() {
+    // Subscribe to PartyStartedEvent
+    this.eventUnsubscribes.push(
+      this.config.eventAggregator.subscribe({
+        eventName: "PartyStartedEvent",
+        abi: ZigguratABI as any[],
+        address: this.config.zigguratAddress,
+        onEvent: async (logs: any[]) => {
+          for (const log of logs) {
+            this.log("PartyStartedEvent received:", {
+              partyId: log.args?.partyId?.toString()
+            });
+            await this.checkSinglePartyProgress(log.args?.partyId);
+          }
+        }
+      })
+    );
+
+    // Subscribe to NextRoomChosenEvent
+    this.eventUnsubscribes.push(
+      this.config.eventAggregator.subscribe({
+        eventName: "NextRoomChosenEvent",
+        abi: ZigguratABI as any[],
+        address: this.config.zigguratAddress,
+        onEvent: async (logs: any[]) => {
+          for (const log of logs) {
+            this.log("NextRoomChosenEvent received:", {
+              partyId: log.args?.partyId?.toString(),
+              doorIndex: log.args?.doorIndex?.toString()
+            });
+            await this.checkSinglePartyProgress(log.args?.partyId);
+          }
+        }
+      })
+    );
+
+    // Subscribe to RoomRevealedEvent
+    this.eventUnsubscribes.push(
+      this.config.eventAggregator.subscribe({
+        eventName: "RoomRevealedEvent",
+        abi: ZigguratABI as any[],
+        address: this.config.zigguratAddress,
+        onEvent: async (logs: any[]) => {
+          for (const log of logs) {
+            this.log("RoomRevealedEvent received:", {
+              roomHash: log.args?.roomHash,
+              doorIndex: log.args?.doorIndex?.toString(),
+              childRoomHash: log.args?.childRoomHash
+            });
+
+            // Query all parties waiting for this room revelation
+            const graphqlClient = createGraphQLClient({ GRAPHQL_URL: this.config.graphqlUrl });
+            try {
+              const result = await graphqlClient.query<{partys: {items: Party[]}}>(GraphQLQueries.getPartiesWaitingForRoom, {
+                zigguratAddress: this.config.zigguratAddress.toLowerCase(),
+                roomHash: log.args?.roomHash,
+                doorIndex: log.args?.doorIndex?.toString() || "0"
+              });
+
+              const waitingParties = result.partys.items;
+              this.log(`Found ${waitingParties.length} parties waiting for room ${log.args?.roomHash} door ${log.args?.doorIndex}`);
+
+              // Process each waiting party
+              for (const party of waitingParties) {
+                this.log(`Processing party ${party.partyId} after room revelation`);
+                await this.checkSinglePartyProgress(BigInt(party.partyId));
+              }
+            } catch (error) {
+              this.error("Error querying parties waiting for room:", error);
+            }
+          }
+        }
+      })
+    );
+
+    // Subscribe to RoomEnteredEvent - but don't try to process these parties
+    this.eventUnsubscribes.push(
+      this.config.eventAggregator.subscribe({
+        eventName: "RoomEnteredEvent",
+        abi: ZigguratABI as any[],
+        address: this.config.zigguratAddress,
+        onEvent: async (logs: any[]) => {
+          for (const log of logs) {
+            this.log("RoomEnteredEvent received:", {
+              partyId: log.args?.partyId?.toString(),
+              roomHash: log.args?.roomHash
+            });
+            // Mark this party as recently processed since they've already entered
+            const partyKey = log.args?.partyId?.toString();
+            if (partyKey) {
+              this.recentlyProcessedParties.set(partyKey, Date.now());
+              this.log(`Party ${partyKey} has entered room, marking as processed`);
+            }
+          }
+        }
+      })
+    );
+
+    // Subscribe to BattleStartedEvent - parties in battle don't need door processing
+    this.eventUnsubscribes.push(
+      this.config.eventAggregator.subscribe({
+        eventName: "BattleStartedEvent",
+        abi: ZigguratABI as any[],
+        address: this.config.zigguratAddress,
+        onEvent: async (logs: any[]) => {
+          for (const log of logs) {
+            this.log("BattleStartedEvent received:", {
+              partyId: log.args?.partyId?.toString(),
+              battleAddress: log.args?.battleAddress
+            });
+            // Mark this party as recently processed since they're in battle
+            const partyKey = log.args?.partyId?.toString();
+            if (partyKey) {
+              this.recentlyProcessedParties.set(partyKey, Date.now());
+              this.log(`Party ${partyKey} has started battle, marking as processed`);
+            }
+          }
+        }
+      })
+    );
   }
 
   stop() {
@@ -73,6 +204,16 @@ export class ZigguratOperator {
 
     this.log("Stopping...");
     this.isRunning = false;
+
+    // Unsubscribe from events
+    for (const unsubscribe of this.eventUnsubscribes) {
+      try {
+        unsubscribe();
+      } catch (error) {
+        this.error("Error unsubscribing from event:", error);
+      }
+    }
+    this.eventUnsubscribes = [];
 
     if (this.intervalId) {
       clearInterval(this.intervalId);
@@ -105,6 +246,30 @@ export class ZigguratOperator {
     }
   }
 
+  private async checkSinglePartyProgress(partyId: bigint): Promise<void> {
+    try {
+      // Get the specific party from GraphQL
+      const graphqlClient = createGraphQLClient({ GRAPHQL_URL: this.config.graphqlUrl });
+      const result = await graphqlClient.query<{partys: {items: Party[]}}>(GraphQLQueries.getSpecificPartyByZiggurat, {
+        zigguratAddress: this.config.zigguratAddress.toLowerCase(),
+        partyId: partyId.toString()
+      });
+
+      // Should be 0 or 1 results
+      const party = result.partys.items[0];
+      
+      if (party) {
+        this.log(`Processing party ${partyId} after event`);
+        await this.checkParty(partyId, party);
+      } else {
+        this.log(`Party ${partyId} not found or not in DOOR_CHOSEN state`);
+      }
+
+    } catch (error) {
+      this.error(`Error in checkSinglePartyProgress for party ${partyId}:`, error);
+    }
+  }
+
   private async checkAllPartiesProgress(): Promise<boolean> {
     try {
       // Use GraphQL to get all DOOR_CHOSEN parties for this ziggurat
@@ -129,42 +294,37 @@ export class ZigguratOperator {
     }
   }
 
-  private async checkSinglePartyProgress(partyId: bigint): Promise<void> {
-    try {
-      // Get the specific party from GraphQL
-      const graphqlClient = createGraphQLClient({ GRAPHQL_URL: this.config.graphqlUrl });
-      const result = await graphqlClient.query<{ partys: { items: Party[] } }>(GraphQLQueries.getSpecificPartyByZiggurat, {
-        zigguratAddress: this.config.zigguratAddress.toLowerCase(),
-        partyId: partyId.toString()
-      });
-
-      // Should be 0 or 1 results
-      const party = result.partys.items[0];
-      
-      if (party) {
-        this.log(`Processing party ${partyId} after event`);
-        await this.checkParty(partyId, party);
-      } else {
-        this.log(`Party ${partyId} not found or not in DOOR_CHOSEN state`);
-      }
-
-    } catch (error) {
-      this.error(`Error in checkSinglePartyProgress for party ${partyId}:`, error);
-    }
-  }
-
   private async checkParty(partyId: bigint, partyGraphQLData: Party): Promise<void> {
-    this.log(`Checking party ${partyId}:`, { 
-      state: partyGraphQLData.state,
-      roomHash: partyGraphQLData.roomHash,
-      chosenDoor: partyGraphQLData.chosenDoor
-    });
+    const partyKey = partyId.toString();
     
-    // Party is guaranteed to be in DOOR_CHOSEN state from GraphQL filter
+    // Check if party is already being processed
+    if (this.processingParties.has(partyKey)) {
+      this.log(`Party ${partyId} is already being processed, skipping`);
+      return;
+    }
     
-    // Use GraphQL data
-    const parentRoomHash = partyGraphQLData.roomHash;
-    const chosenDoorIndex = Number(partyGraphQLData.chosenDoor);
+    // Check if party was recently processed (within last 30 seconds)
+    const lastProcessed = this.recentlyProcessedParties.get(partyKey);
+    if (lastProcessed && Date.now() - lastProcessed < 30000) {
+      this.log(`Party ${partyId} was recently processed, skipping`);
+      return;
+    }
+    
+    // Mark party as being processed
+    this.processingParties.add(partyKey);
+    
+    try {
+      this.log(`Checking party ${partyId}:`, { 
+        state: partyGraphQLData.state,
+        roomHash: partyGraphQLData.roomHash,
+        chosenDoor: partyGraphQLData.chosenDoor
+      });
+      
+      // Party is guaranteed to be in DOOR_CHOSEN state from GraphQL filter
+      
+      // Use GraphQL data
+      const parentRoomHash = partyGraphQLData.roomHash;
+      const chosenDoorIndex = Number(partyGraphQLData.chosenDoor);
 
     // Use GraphQL to check if specific room has been revealed
     const graphqlClient = createGraphQLClient({ GRAPHQL_URL: this.config.graphqlUrl });
@@ -202,6 +362,24 @@ export class ZigguratOperator {
       // Room is already revealed, ready to enter
       this.log(`Party ${partyId} is ready to enter revealed door`);
       await this.executeEnterDoor(partyId);
+    }
+    
+    // Mark party as successfully processed
+    this.recentlyProcessedParties.set(partyKey, Date.now());
+    
+    // Clean up old entries (older than 60 seconds)
+    const cutoffTime = Date.now() - 60000;
+    for (const [key, timestamp] of this.recentlyProcessedParties) {
+      if (timestamp < cutoffTime) {
+        this.recentlyProcessedParties.delete(key);
+      }
+    }
+    
+    } catch (error) {
+      this.error(`Error processing party ${partyId}:`, error);
+    } finally {
+      // Always remove from processing set
+      this.processingParties.delete(partyKey);
     }
   }
 
@@ -336,7 +514,12 @@ export class ZigguratOperator {
           walletClient,
           this.config.erc2771ForwarderAddress as `0x${string}`
         );
-      } catch (error) {
+      } catch (error: any) {
+        // Check for specific error types
+        if (error.message?.includes('InvalidPartyStateError')) {
+          this.log(`Party ${partyId} is no longer in DOOR_CHOSEN state, skipping`);
+          return;
+        }
         this.error("Error forwarding enterDoor transaction:", error);
         return;
       }
