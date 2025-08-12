@@ -467,6 +467,10 @@ export class CharacterOperator {
         this.log('Updated energy:', currentEnergy, 'Hand size:', handCards.length);
         
         this.lastActionTime = Date.now();
+        
+        // Sleep for 1 second after successfully playing an action
+        this.log('Sleeping for 1 second after action...');
+        await new Promise(resolve => setTimeout(resolve, 1000));
       } catch (error: any) {
         if (error.message?.includes('CardNotInHandError')) {
           // This can happen if there's a race condition or state mismatch
