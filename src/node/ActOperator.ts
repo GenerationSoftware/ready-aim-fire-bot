@@ -1,4 +1,4 @@
-import { createPublicClient, createWalletClient, encodeFunctionData, type Abi } from "viem";
+import { createPublicClient, createWalletClient, encodeFunctionData, type Abi, keccak256, encodeAbiParameters } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
 import ActABI from "../contracts/abis/Act.json";
@@ -10,6 +10,24 @@ import type { Logger } from "pino";
 
 import type { EventAggregator } from "./EventAggregator";
 
+// Room struct matching the Solidity contract
+interface Room {
+  depth: number;
+  roomType: number;
+  doorCount: number;
+  monsterIndex1: number;
+}
+
+// Map node from the JSON
+interface MapNode {
+  type: number;
+  doors: number;
+  monster1?: number;
+  monster2?: number;
+  monster3?: number;
+  children?: MapNode[];
+}
+
 export interface ActOperatorConfig {
   ethRpcUrl: string;
   ethWsRpcUrl: string;
@@ -20,6 +38,9 @@ export interface ActOperatorConfig {
   erc2771ForwarderAddress: string;
   actAddress: string;
   eventAggregator: EventAggregator;
+  rafApiUrl?: string;
+  rafApiUsername?: string;
+  rafApiPassword?: string;
 }
 
 export class ActOperator {
@@ -31,6 +52,8 @@ export class ActOperator {
   private eventUnsubscribes: Array<() => void> = [];
   private processingParties: Set<string> = new Set(); // Track parties being processed
   private recentlyProcessedParties: Map<string, number> = new Map(); // Track recently processed parties with timestamp
+  private roomMap: Map<string, Room> = new Map(); // Cache of room hash to Room struct
+  private rootRoomHash?: string; // Cache the root room hash
 
   constructor(config: ActOperatorConfig) {
     this.config = config;
@@ -53,7 +76,116 @@ export class ActOperator {
     }
   }
 
-  start() {
+  private async fetchAndProcessMap(): Promise<void> {
+    try {
+      // Get environment variables with fallbacks
+      const rafApiUrl = this.config.rafApiUrl || process.env.RAF_API_URL;
+      const rafApiUsername = this.config.rafApiUsername || process.env.RAF_API_USERNAME;
+      const rafApiPassword = this.config.rafApiPassword || process.env.RAF_API_PASSWORD;
+
+      if (!rafApiUrl || !rafApiUsername || !rafApiPassword) {
+        this.error("Missing RAF API configuration. Please set RAF_API_URL, RAF_API_USERNAME, and RAF_API_PASSWORD");
+        return;
+      }
+
+      // Get the root room hash from the contract
+      const publicClient = createPublicClient({
+        chain: arbitrum,
+        transport: createAuthenticatedHttpTransport(this.config.ethRpcUrl, { ETH_RPC_URL: this.config.ethRpcUrl })
+      });
+
+      this.rootRoomHash = await publicClient.readContract({
+        address: this.config.actAddress as `0x${string}`,
+        abi: ActABI as Abi,
+        functionName: 'ROOT_ROOM_HASH'
+      }) as string;
+
+      this.log(`Root room hash: ${this.rootRoomHash}`);
+
+      // Fetch the map JSON
+      const actAddressLowercase = this.config.actAddress.toLowerCase();
+      const mapUrl = `${rafApiUrl}/act/${actAddressLowercase}/map.json`;
+      
+      this.log(`Fetching map from: ${mapUrl}`);
+      
+      const auth = btoa(`${rafApiUsername}:${rafApiPassword}`);
+      const response = await fetch(mapUrl, {
+        headers: {
+          'Authorization': `Basic ${auth}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch map: ${response.status} ${response.statusText}`);
+      }
+
+      const mapData = await response.json() as MapNode;
+      this.log("Map data fetched successfully");
+
+      // Process the map into room hash -> Room struct mapping
+      this.processMapNode(mapData, this.rootRoomHash, 0, 0);
+      this.log(`Processed ${this.roomMap.size} rooms from map`);
+
+    } catch (error: any) {
+      this.error("Error fetching or processing map:", {
+        message: error.message,
+        stack: error.stack,
+        rafApiUrl: this.config.rafApiUrl || process.env.RAF_API_URL,
+        actAddress: this.config.actAddress
+      });
+    }
+  }
+
+  private processMapNode(node: MapNode, parentRoomHash: string, childIndex: number, depth: number = 0): void {
+    // Calculate the room hash for this node
+    const roomHash = this.calculateRoomHash(parentRoomHash, childIndex);
+    
+    // Create the Room struct
+    const room: Room = {
+      depth: depth,
+      roomType: node.type,
+      doorCount: node.doors,
+      monsterIndex1: node.monster1 || 0
+    };
+
+    // Store in the map
+    this.roomMap.set(roomHash, room);
+
+    // Process children recursively
+    if (node.children) {
+      node.children.forEach((childNode, index) => {
+        this.processMapNode(childNode, roomHash, index, depth + 1);
+      });
+    }
+  }
+
+  private calculateRoomHash(parentRoomHash: string, childIndex: number): string {
+    // If this is the root node
+    if (parentRoomHash === this.rootRoomHash && childIndex === 0) {
+      return this.rootRoomHash!;
+    }
+
+    // Calculate hash as keccak256(abi.encode(parentRoomHash, childIndex))
+    const encoded = encodeAbiParameters(
+      [{ type: 'bytes32' }, { type: 'uint256' }],
+      [parentRoomHash as `0x${string}`, BigInt(childIndex)]
+    );
+    
+    return keccak256(encoded);
+  }
+
+  private getRoomForPartyDoor(parentRoomHash: string, doorIndex: number): Room | undefined {
+    const roomHash = this.calculateRoomHash(parentRoomHash, doorIndex);
+    const room = this.roomMap.get(roomHash);
+    
+    if (!room) {
+      this.error(`Room not found for hash ${roomHash} (parent: ${parentRoomHash}, door: ${doorIndex})`);
+    }
+    
+    return room;
+  }
+
+  async start() {
     if (this.isRunning) {
       this.log("Already running");
       return;
@@ -61,6 +193,9 @@ export class ActOperator {
 
     this.isRunning = true;
     this.log("Starting...");
+
+    // Fetch and process the map data
+    await this.fetchAndProcessMap();
 
     // Subscribe to events
     this.subscribeToEvents();
@@ -73,6 +208,7 @@ export class ActOperator {
       this.performPeriodicCheck();
     }, 5000);
   }
+
 
   private subscribeToEvents() {
     // Subscribe to PartyStartedEvent
@@ -292,9 +428,16 @@ export class ActOperator {
       const chosenDoorIndex = Number(partyGraphQLData.chosenDoor);
 
     // In the new Act contract, rooms are revealed automatically when entering
-    // So we just need to call enterDoor directly
-    this.log(`Party ${partyId} is ready to enter door ${chosenDoorIndex}`);
-    await this.executeEnterDoor(partyId);
+    // Get the room data for the door the party wants to enter
+    const room = this.getRoomForPartyDoor(parentRoomHash, chosenDoorIndex);
+    
+    if (!room) {
+      this.error(`Cannot find room data for party ${partyId} trying to enter door ${chosenDoorIndex} from room ${parentRoomHash}`);
+      return;
+    }
+    
+    this.log(`Party ${partyId} is ready to enter door ${chosenDoorIndex} to room type ${room.roomType}`);
+    await this.executeEnterDoor(partyId, room);
     
     // Mark party as successfully processed
     this.recentlyProcessedParties.set(partyKey, Date.now());
@@ -316,9 +459,9 @@ export class ActOperator {
   }
 
 
-  private async executeEnterDoor(partyId: bigint): Promise<void> {
+  private async executeEnterDoor(partyId: bigint, room: Room): Promise<void> {
     try {
-      this.log(`Executing enterDoor for party ${partyId}`);
+      this.log(`Executing enterDoor for party ${partyId} with room:`, room);
 
       // Create wallet client for sending transactions
       const account = privateKeyToAccount(this.config.operatorPrivateKey as `0x${string}`);
@@ -328,14 +471,14 @@ export class ActOperator {
         transport: createAuthenticatedHttpTransport(this.config.ethRpcUrl, { ETH_RPC_URL: this.config.ethRpcUrl })
       });
 
-      // Encode the enterDoor function call
+      // Encode the enterDoor function call with the Room struct
       const data = encodeFunctionData({
         abi: ActABI as Abi,
         functionName: 'enterDoor',
-        args: [partyId]
+        args: [partyId, room]
       });
 
-      this.log("Calling enterDoor for party", partyId);
+      this.log("Calling enterDoor for party", partyId, "with room type", room.roomType);
 
       // Forward the transaction
       let hash;
