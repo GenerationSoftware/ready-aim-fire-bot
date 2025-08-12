@@ -145,7 +145,17 @@
             "internalType": "contract PlayerStatsStorage"
           },
           {
+            "name": "playerDeckManager",
+            "type": "address",
+            "internalType": "contract PlayerDeckManager"
+          },
+          {
             "name": "enforceAdjacency",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "turnTimerEnabled",
             "type": "bool",
             "internalType": "bool"
           }
@@ -159,7 +169,7 @@
     "name": "countTeamTurns",
     "inputs": [
       {
-        "name": "_teamA",
+        "name": "_started",
         "type": "bool",
         "internalType": "bool"
       },
@@ -181,7 +191,7 @@
         "internalType": "uint256"
       }
     ],
-    "stateMutability": "view"
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -300,42 +310,6 @@
   },
   {
     "type": "function",
-    "name": "getPlayerCardPileState",
-    "inputs": [
-      {
-        "name": "_playerId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "tuple",
-        "internalType": "struct CardPileState",
-        "components": [
-          {
-            "name": "drawPile",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "hand",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "discardPile",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          }
-        ]
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "getPlayerHand",
     "inputs": [
       {
@@ -423,29 +397,6 @@
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "incPlayerStat",
-    "inputs": [
-      {
-        "name": "_playerId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "_stat",
-        "type": "uint8",
-        "internalType": "enum PlayerStatType"
-      },
-      {
-        "name": "_amount",
-        "type": "uint8",
-        "internalType": "uint8"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -709,6 +660,11 @@
         "name": "_character",
         "type": "address",
         "internalType": "contract Character"
+      },
+      {
+        "name": "_deckId",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [
@@ -835,6 +791,19 @@
         "name": "",
         "type": "address",
         "internalType": "contract Character"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "playerDeckManager",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract PlayerDeckManager"
       }
     ],
     "stateMutability": "view"
@@ -1076,6 +1045,19 @@
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "turnTimerEnabled",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -1324,11 +1306,6 @@
   },
   {
     "type": "error",
-    "name": "BitIndexOutOfBounds",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "BothTeamsMustHavePlayersError",
     "inputs": []
   },
@@ -1336,33 +1313,6 @@
     "type": "error",
     "name": "CannotPlayWhenEliminatedError",
     "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "CardIdOutOfRange",
-    "inputs": [
-      {
-        "name": "cardId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "CardNotInHand",
-    "inputs": [
-      {
-        "name": "cardId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "hand",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
   },
   {
     "type": "error",
@@ -1374,11 +1324,6 @@
         "internalType": "bytes32"
       }
     ]
-  },
-  {
-    "type": "error",
-    "name": "DeckNotAllowedError",
-    "inputs": []
   },
   {
     "type": "error",
@@ -1422,22 +1367,7 @@
   },
   {
     "type": "error",
-    "name": "MustHaveAtLeastOneCardError",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NoCardsAvailableToDraw",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "NotCharacterOwnerOrOperatorError",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NotEnoughEnergyError",
     "inputs": []
   },
   {
@@ -1491,22 +1421,6 @@
     "type": "error",
     "name": "PlayerIdAlreadyJoined",
     "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "SafeCastOverflowedUintDowncast",
-    "inputs": [
-      {
-        "name": "bits",
-        "type": "uint8",
-        "internalType": "uint8"
-      },
-      {
-        "name": "value",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
   },
   {
     "type": "error",

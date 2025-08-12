@@ -8,14 +8,14 @@
         "internalType": "address"
       },
       {
-        "name": "_operator",
+        "name": "_owner",
         "type": "address",
         "internalType": "address"
       },
       {
-        "name": "_rngSeed",
-        "type": "bytes32",
-        "internalType": "bytes32"
+        "name": "_operator",
+        "type": "address",
+        "internalType": "address"
       },
       {
         "name": "_battleFactory",
@@ -31,6 +31,43 @@
         "name": "_monsterRegistry",
         "type": "address",
         "internalType": "contract MonsterRegistry"
+      },
+      {
+        "name": "_playerDeckManager",
+        "type": "address",
+        "internalType": "contract PlayerDeckManager"
+      },
+      {
+        "name": "_rootRoom",
+        "type": "tuple",
+        "internalType": "struct Room",
+        "components": [
+          {
+            "name": "depth",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "roomType",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "doorCount",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "monsterIndex1",
+            "type": "uint8",
+            "internalType": "uint8"
+          }
+        ]
+      },
+      {
+        "name": "_maxDepth",
+        "type": "uint8",
+        "internalType": "uint8"
       }
     ],
     "stateMutability": "nonpayable"
@@ -63,13 +100,13 @@
   },
   {
     "type": "function",
-    "name": "MIN_DEPTH_FOR_EMPTY",
+    "name": "ROOT_ROOM_HASH",
     "inputs": [],
     "outputs": [
       {
         "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "stateMutability": "view"
@@ -108,7 +145,7 @@
       {
         "name": "",
         "type": "address",
-        "internalType": "contract ZigguratBattleRewards"
+        "internalType": "contract RoomRewards"
       }
     ],
     "stateMutability": "view"
@@ -128,24 +165,38 @@
   },
   {
     "type": "function",
-    "name": "childRoomHashes",
+    "name": "characterDeckIds",
     "inputs": [
       {
-        "name": "roomHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "doorIndex",
-        "type": "uint256",
-        "internalType": "uint256"
+        "name": "character",
+        "type": "address",
+        "internalType": "contract Character"
       }
     ],
     "outputs": [
       {
-        "name": "childRoomHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
+        "name": "deckId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "characterWins",
+    "inputs": [
+      {
+        "name": "character",
+        "type": "address",
+        "internalType": "contract Character"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "hasWon",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -177,22 +228,27 @@
   },
   {
     "type": "function",
-    "name": "createAndStartParty",
+    "name": "computeChildRoomHash",
     "inputs": [
       {
-        "name": "character",
-        "type": "address",
-        "internalType": "contract Character"
+        "name": "_roomHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "_doorIndex",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [
       {
         "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
-    "stateMutability": "nonpayable"
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -202,6 +258,23 @@
         "name": "character",
         "type": "address",
         "internalType": "contract Character"
+      },
+      {
+        "name": "tokens",
+        "type": "tuple[]",
+        "internalType": "struct Token[]",
+        "components": [
+          {
+            "name": "deck",
+            "type": "address",
+            "internalType": "contract IDeck"
+          },
+          {
+            "name": "tokenId",
+            "type": "uint96",
+            "internalType": "uint96"
+          }
+        ]
       },
       {
         "name": "_inviter",
@@ -238,86 +311,56 @@
   },
   {
     "type": "function",
+    "name": "endParty",
+    "inputs": [
+      {
+        "name": "_partyId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "enterDoor",
     "inputs": [
       {
         "name": "_partyId",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "_room",
+        "type": "tuple",
+        "internalType": "struct Room",
+        "components": [
+          {
+            "name": "depth",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "roomType",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "doorCount",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "monsterIndex1",
+            "type": "uint8",
+            "internalType": "uint8"
+          }
+        ]
       }
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "escape",
-    "inputs": [
-      {
-        "name": "_partyId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "getMonsterIndex",
-    "inputs": [
-      {
-        "name": "_roomHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "getNumberOfDoors",
-    "inputs": [
-      {
-        "name": "_roomHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "getRoomType",
-    "inputs": [
-      {
-        "name": "_roomHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint8",
-        "internalType": "enum RoomType"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -418,6 +461,23 @@
         "internalType": "contract Character"
       },
       {
+        "name": "tokens",
+        "type": "tuple[]",
+        "internalType": "struct Token[]",
+        "components": [
+          {
+            "name": "deck",
+            "type": "address",
+            "internalType": "contract IDeck"
+          },
+          {
+            "name": "tokenId",
+            "type": "uint96",
+            "internalType": "uint96"
+          }
+        ]
+      },
+      {
         "name": "partyId",
         "type": "uint256",
         "internalType": "uint256"
@@ -436,6 +496,23 @@
         "internalType": "contract Character"
       },
       {
+        "name": "tokens",
+        "type": "tuple[]",
+        "internalType": "struct Token[]",
+        "components": [
+          {
+            "name": "deck",
+            "type": "address",
+            "internalType": "contract IDeck"
+          },
+          {
+            "name": "tokenId",
+            "type": "uint96",
+            "internalType": "uint96"
+          }
+        ]
+      },
+      {
         "name": "partyId",
         "type": "uint256",
         "internalType": "uint256"
@@ -448,6 +525,79 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "lastRoom",
+    "inputs": [
+      {
+        "name": "_partyId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct Room",
+        "components": [
+          {
+            "name": "depth",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "roomType",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "doorCount",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "monsterIndex1",
+            "type": "uint8",
+            "internalType": "uint8"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "lastRoomHash",
+    "inputs": [
+      {
+        "name": "_partyId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "maxDepth",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -486,12 +636,12 @@
     "name": "onTransferOperator",
     "inputs": [
       {
-        "name": "previousOperator",
+        "name": "",
         "type": "address",
         "internalType": "address"
       },
       {
-        "name": "data",
+        "name": "",
         "type": "bytes",
         "internalType": "bytes"
       }
@@ -503,7 +653,7 @@
         "internalType": "bytes4"
       }
     ],
-    "stateMutability": "nonpayable"
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -566,16 +716,6 @@
             "name": "state",
             "type": "uint8",
             "internalType": "enum PartyState"
-          },
-          {
-            "name": "roomHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "chosenDoor",
-            "type": "uint256",
-            "internalType": "uint256"
           }
         ]
       }
@@ -613,6 +753,30 @@
     "outputs": [
       {
         "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "partyDeckIds",
+    "inputs": [
+      {
+        "name": "partyId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "deckIds",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -664,6 +828,43 @@
   },
   {
     "type": "function",
+    "name": "partyRooms",
+    "inputs": [
+      {
+        "name": "partyId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "rooms",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "playerDeckManager",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract PlayerDeckManager"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "renounceOperatorship",
     "inputs": [],
     "outputs": [],
@@ -675,42 +876,6 @@
     "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "revealDoor",
-    "inputs": [
-      {
-        "name": "_roomHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "_doorIndex",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "signature",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "rngSeed",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -730,23 +895,25 @@
         "components": [
           {
             "name": "depth",
-            "type": "uint256",
-            "internalType": "uint256"
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "roomType",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "doorCount",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "monsterIndex1",
+            "type": "uint8",
+            "internalType": "uint8"
           }
         ]
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "rootRoomHash",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
       }
     ],
     "stateMutability": "view"
@@ -776,7 +943,7 @@
       {
         "name": "_battleRewards",
         "type": "address",
-        "internalType": "contract ZigguratBattleRewards"
+        "internalType": "contract RoomRewards"
       }
     ],
     "outputs": [],
@@ -846,6 +1013,12 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "ActClosedEvent",
+    "inputs": [],
+    "anonymous": false
   },
   {
     "type": "event",
@@ -1042,44 +1215,40 @@
         "internalType": "bytes32"
       },
       {
-        "name": "roomType",
-        "type": "uint8",
+        "name": "room",
+        "type": "tuple",
         "indexed": false,
-        "internalType": "enum RoomType"
+        "internalType": "struct Room",
+        "components": [
+          {
+            "name": "depth",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "roomType",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "doorCount",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "monsterIndex1",
+            "type": "uint8",
+            "internalType": "uint8"
+          }
+        ]
       }
     ],
     "anonymous": false
   },
   {
-    "type": "event",
-    "name": "RoomRevealedEvent",
-    "inputs": [
-      {
-        "name": "roomHash",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "doorIndex",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "childRoomHash",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "ZigguratClosedEvent",
-    "inputs": [],
-    "anonymous": false
+    "type": "error",
+    "name": "ActClosedError",
+    "inputs": []
   },
   {
     "type": "error",
@@ -1093,12 +1262,17 @@
   },
   {
     "type": "error",
-    "name": "CharacterNotInPartyError",
+    "name": "CannotEndPartyBeforeMaxDepthInNonBattleRoomError",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "CharacterOperatorNotZigguratError",
+    "name": "CannotEndPartyBeforeMaxDepthUnlessDefeatedError",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "CharacterNotInPartyError",
     "inputs": []
   },
   {
@@ -1150,22 +1324,17 @@
   },
   {
     "type": "error",
+    "name": "InvalidTokenOwnerError",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NoActiveCardsError",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "NoMonstersError",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "NotBattleRoomError",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "OnlyCharacterOwnerError",
     "inputs": []
   },
   {
@@ -1223,32 +1392,6 @@
   {
     "type": "error",
     "name": "RoomNotCompleteError",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "RoomNotRevealedError",
-    "inputs": [
-      {
-        "name": "roomHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "doorIndex",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "SignatureRecoveryError",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "ZigguratClosedError",
     "inputs": []
   }
 ]

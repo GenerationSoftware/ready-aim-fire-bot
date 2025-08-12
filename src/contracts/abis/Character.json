@@ -27,168 +27,6 @@
   },
   {
     "type": "function",
-    "name": "activeCardCount",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "activeCards",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "cardAtIndex",
-    "inputs": [
-      {
-        "name": "_index",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "tuple",
-        "internalType": "struct Card",
-        "components": [
-          {
-            "name": "deck",
-            "type": "address",
-            "internalType": "contract IDeck"
-          },
-          {
-            "name": "tokenId",
-            "type": "uint256",
-            "internalType": "uint256"
-          }
-        ]
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "cards",
-    "inputs": [
-      {
-        "name": "cardId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "deck",
-        "type": "address",
-        "internalType": "contract IDeck"
-      },
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "deckCardCount",
-    "inputs": [
-      {
-        "name": "deck",
-        "type": "address",
-        "internalType": "contract IDeck"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "count",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "deckCardCounts",
-    "inputs": [
-      {
-        "name": "_decks",
-        "type": "address[]",
-        "internalType": "contract IDeck[]"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "deckToCardIds",
-    "inputs": [
-      {
-        "name": "deck",
-        "type": "address",
-        "internalType": "contract IDeck"
-      },
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "cardId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isCardActive",
-    "inputs": [
-      {
-        "name": "_cardId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "isOwnerOrOperator",
     "inputs": [
       {
@@ -298,35 +136,6 @@
   },
   {
     "type": "function",
-    "name": "setCardActive",
-    "inputs": [
-      {
-        "name": "_deck",
-        "type": "address",
-        "internalType": "contract IDeck"
-      },
-      {
-        "name": "_tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "_active",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "skin",
     "inputs": [],
     "outputs": [
@@ -384,56 +193,6 @@
   },
   {
     "type": "event",
-    "name": "ActivatedCard",
-    "inputs": [
-      {
-        "name": "cardId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "deck",
-        "type": "address",
-        "indexed": true,
-        "internalType": "contract IDeck"
-      },
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "DeactivatedCard",
-    "inputs": [
-      {
-        "name": "cardId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "deck",
-        "type": "address",
-        "indexed": true,
-        "internalType": "contract IDeck"
-      },
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "OperatorTransferred",
     "inputs": [
       {
@@ -472,27 +231,7 @@
   },
   {
     "type": "error",
-    "name": "CardAlreadyActive",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "CardNotActive",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "InvalidOperator",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NoAvailableCardSlots",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NotCardOwner",
     "inputs": []
   },
   {
@@ -502,17 +241,7 @@
   },
   {
     "type": "error",
-    "name": "OnlyOwnerError",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "OnlyXorOperatorError",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "OnlyXorOperatorOrDelegateError",
+    "name": "OnlyOwnerOrOperatorError",
     "inputs": []
   },
   {

@@ -24,7 +24,7 @@
     "src/OperatorManager.ts", 
     "src/CharacterOperator.ts",
     "src/BattleOperator.ts",
-    "src/ZigguratOperator.ts",
+    "src/ActOperator.ts",
     "src/EventAggregator.ts",
     "src/Env.ts",
     "src/**/*.test.ts",

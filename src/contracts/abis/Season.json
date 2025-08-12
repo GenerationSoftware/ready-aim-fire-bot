@@ -16,9 +16,74 @@
         "name": "_operator",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "acts",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract Act"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "createParty",
+    "inputs": [
+      {
+        "name": "actIndex",
+        "type": "uint256",
+        "internalType": "uint256"
       },
       {
-        "name": "_zigguratDuration",
+        "name": "character",
+        "type": "address",
+        "internalType": "contract Character"
+      },
+      {
+        "name": "tokens",
+        "type": "tuple[]",
+        "internalType": "struct Token[]",
+        "components": [
+          {
+            "name": "deck",
+            "type": "address",
+            "internalType": "contract IDeck"
+          },
+          {
+            "name": "tokenId",
+            "type": "uint96",
+            "internalType": "uint96"
+          }
+        ]
+      },
+      {
+        "name": "inviter",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "isPublic",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -27,19 +92,58 @@
   },
   {
     "type": "function",
-    "name": "_pastZiggurats",
+    "name": "getAct",
     "inputs": [
       {
-        "name": "ziggurat",
-        "type": "address",
-        "internalType": "contract Ziggurat"
+        "name": "index",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [
       {
-        "name": "wasSet",
-        "type": "bool",
-        "internalType": "bool"
+        "name": "",
+        "type": "address",
+        "internalType": "contract Act"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getActsCount",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getAllActs",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address[]",
+        "internalType": "contract Act[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getCurrentAct",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract Act"
       }
     ],
     "stateMutability": "view"
@@ -84,35 +188,88 @@
   },
   {
     "type": "function",
-    "name": "isZiggurat",
+    "name": "joinParty",
     "inputs": [
       {
-        "name": "ziggurat",
+        "name": "actIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "character",
         "type": "address",
-        "internalType": "contract Ziggurat"
-      }
-    ],
-    "outputs": [
+        "internalType": "contract Character"
+      },
       {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "lastSetAt",
-    "inputs": [],
-    "outputs": [
+        "name": "tokens",
+        "type": "tuple[]",
+        "internalType": "struct Token[]",
+        "components": [
+          {
+            "name": "deck",
+            "type": "address",
+            "internalType": "contract IDeck"
+          },
+          {
+            "name": "tokenId",
+            "type": "uint96",
+            "internalType": "uint96"
+          }
+        ]
+      },
       {
-        "name": "",
+        "name": "partyId",
         "type": "uint256",
         "internalType": "uint256"
       }
     ],
-    "stateMutability": "view"
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "joinPartyWithInvite",
+    "inputs": [
+      {
+        "name": "actIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "character",
+        "type": "address",
+        "internalType": "contract Character"
+      },
+      {
+        "name": "tokens",
+        "type": "tuple[]",
+        "internalType": "struct Token[]",
+        "components": [
+          {
+            "name": "deck",
+            "type": "address",
+            "internalType": "contract IDeck"
+          },
+          {
+            "name": "tokenId",
+            "type": "uint96",
+            "internalType": "uint96"
+          }
+        ]
+      },
+      {
+        "name": "partyId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "signature",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -142,6 +299,32 @@
   },
   {
     "type": "function",
+    "name": "popAct",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract Act"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "pushAct",
+    "inputs": [
+      {
+        "name": "_act",
+        "type": "address",
+        "internalType": "contract Act"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "renounceOperatorship",
     "inputs": [],
     "outputs": [],
@@ -167,32 +350,6 @@
         "name": "data",
         "type": "bytes",
         "internalType": "bytes"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setZiggurat",
-    "inputs": [
-      {
-        "name": "_zig",
-        "type": "address",
-        "internalType": "contract Ziggurat"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setZigguratDuration",
-    "inputs": [
-      {
-        "name": "_zigguratDuration",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ],
     "outputs": [],
@@ -238,30 +395,42 @@
     "stateMutability": "view"
   },
   {
-    "type": "function",
-    "name": "ziggurat",
-    "inputs": [],
-    "outputs": [
+    "type": "event",
+    "name": "ActAdded",
+    "inputs": [
       {
-        "name": "",
+        "name": "act",
         "type": "address",
-        "internalType": "contract Ziggurat"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "zigguratDuration",
-    "inputs": [],
-    "outputs": [
+        "indexed": true,
+        "internalType": "contract Act"
+      },
       {
-        "name": "",
+        "name": "index",
         "type": "uint256",
+        "indexed": true,
         "internalType": "uint256"
       }
     ],
-    "stateMutability": "view"
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ActRemoved",
+    "inputs": [
+      {
+        "name": "act",
+        "type": "address",
+        "indexed": true,
+        "internalType": "contract Act"
+      },
+      {
+        "name": "index",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
   },
   {
     "type": "event",
@@ -303,32 +472,6 @@
   },
   {
     "type": "event",
-    "name": "ZigguratDurationSet",
-    "inputs": [
-      {
-        "name": "zigguratDuration",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "ZigguratSet",
-    "inputs": [
-      {
-        "name": "ziggurat",
-        "type": "address",
-        "indexed": true,
-        "internalType": "contract Ziggurat"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "SeasonCreated",
     "inputs": [
       {
@@ -348,19 +491,28 @@
         "type": "address",
         "indexed": true,
         "internalType": "address"
-      },
-      {
-        "name": "zigguratDuration",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
       }
     ],
     "anonymous": false
   },
   {
     "type": "error",
+    "name": "AlreadyWonActError",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidActIndexError",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidOperator",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MustWinPreviousActError",
     "inputs": []
   },
   {
@@ -394,10 +546,5 @@
         "internalType": "address"
       }
     ]
-  },
-  {
-    "type": "error",
-    "name": "ZigguratNotExpired",
-    "inputs": []
   }
 ]

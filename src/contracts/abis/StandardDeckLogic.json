@@ -51,7 +51,17 @@
         "internalType": "uint256"
       },
       {
-        "name": "_tokenId",
+        "name": "_deckId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "_cardIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "_actionType",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -83,6 +93,11 @@
     "outputs": [
       {
         "name": "energy",
+        "type": "uint8",
+        "internalType": "uint8"
+      },
+      {
+        "name": "discardType",
         "type": "uint8",
         "internalType": "uint8"
       }
@@ -120,7 +135,7 @@
     "name": "energyRequired",
     "inputs": [
       {
-        "name": "_tokenId",
+        "name": "_actionType",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -264,6 +279,11 @@
             "internalType": "uint8"
           },
           {
+            "name": "discardType",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
             "name": "effects",
             "type": "tuple[15]",
             "internalType": "struct Effect[15]",
@@ -323,6 +343,11 @@
         "components": [
           {
             "name": "energy",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "discardType",
             "type": "uint8",
             "internalType": "uint8"
           },
@@ -454,6 +479,11 @@
         "internalType": "uint256"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "NotEnoughEnergyError",
+    "inputs": []
   },
   {
     "type": "error",

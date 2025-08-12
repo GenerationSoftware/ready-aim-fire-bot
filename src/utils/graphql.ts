@@ -137,7 +137,7 @@ export enum PartyState {
 
 export interface Party {
   id: string;
-  zigguratAddress: string;
+  actAddress: string;
   partyId: string;
   leader: string;
   isPublic: boolean;
@@ -150,9 +150,9 @@ export interface Party {
   endedAt: string | null;
 }
 
-export interface ZigguratRoom {
+export interface ActRoom {
   id: string;
-  zigguratAddress: string;
+  actAddress: string;
   roomHash: string;
   parentRoomHash: string | null;
   parentDoorIndex: string | null;
@@ -195,7 +195,7 @@ export interface Character {
   };
 }
 
-export interface Ziggurat {
+export interface Act {
   address: string;
 }
 
@@ -203,13 +203,13 @@ export interface Ziggurat {
 // NOTE: All queries that return lists use cursor-based pagination with $limit and $after parameters
 // Use the queryAllPages utility function when you need to fetch all results
 export const GraphQLQueries = {
-  // Ziggurat queries
-  getPartiesByZigguratWithStateDoorChosen: `
-    query GetPartiesByZiggurat($zigguratAddress: String!, $limit: Int, $after: String) {
-      partys(where: { zigguratAddress: $zigguratAddress, state: "1" }, limit: $limit, after: $after) {
+  // Act queries
+  getPartiesByActWithStateDoorChosen: `
+    query GetPartiesByAct($actAddress: String!, $limit: Int, $after: String) {
+      partys(where: { actAddress: $actAddress, state: "1" }, limit: $limit, after: $after) {
         items {
           id
-          zigguratAddress
+          actAddress
           partyId
           leader
           isPublic
@@ -225,12 +225,12 @@ export const GraphQLQueries = {
     }
   `,
 
-  getZigguratRooms: `
-    query GetZigguratRooms($zigguratAddress: String!) {
-      zigguratRooms(where: { zigguratAddress: $zigguratAddress }) {
+  getActRooms: `
+    query GetActRooms($actAddress: String!) {
+      actRooms(where: { actAddress: $actAddress }) {
         items {
           id
-          zigguratAddress
+          actAddress
           roomHash
           parentRoomHash
           parentDoorIndex
@@ -240,16 +240,16 @@ export const GraphQLQueries = {
     }
   `,
 
-  getSpecificZigguratRoom: `
-    query GetSpecificZigguratRoom($zigguratAddress: String!, $parentRoomHash: String!, $parentDoorIndex: BigInt!) {
-      zigguratRooms(where: { 
-        zigguratAddress: $zigguratAddress, 
+  getSpecificActRoom: `
+    query GetSpecificActRoom($actAddress: String!, $parentRoomHash: String!, $parentDoorIndex: BigInt!) {
+      actRooms(where: { 
+        actAddress: $actAddress, 
         parentRoomHash: $parentRoomHash, 
         parentDoorIndex: $parentDoorIndex 
       }) {
         items {
           id
-          zigguratAddress
+          actAddress
           roomHash
           parentRoomHash
           parentDoorIndex
@@ -260,9 +260,9 @@ export const GraphQLQueries = {
   `,
 
   getPartiesWaitingForRoom: `
-    query GetPartiesWaitingForRoom($zigguratAddress: String!, $roomHash: String!, $doorIndex: BigInt!) {
+    query GetPartiesWaitingForRoom($actAddress: String!, $roomHash: String!, $doorIndex: BigInt!) {
       partys(where: { 
-        zigguratAddress: $zigguratAddress, 
+        actAddress: $actAddress, 
         roomHash: $roomHash, 
         chosenDoor: $doorIndex, 
         state: "1",
@@ -270,7 +270,7 @@ export const GraphQLQueries = {
       }) {
         items {
           id
-          zigguratAddress
+          actAddress
           partyId
           leader
           isPublic
@@ -286,12 +286,12 @@ export const GraphQLQueries = {
     }
   `,
 
-  getSpecificPartyByZiggurat: `
-    query GetSpecificPartyByZiggurat($zigguratAddress: String!, $partyId: String!) {
-      partys(where: { zigguratAddress: $zigguratAddress, partyId: $partyId}) {
+  getSpecificPartyByAct: `
+    query GetSpecificPartyByAct($actAddress: String!, $partyId: String!) {
+      partys(where: { actAddress: $actAddress, partyId: $partyId}) {
         items {
           id
-          zigguratAddress
+          actAddress
           partyId
           leader
           isPublic
@@ -514,9 +514,9 @@ export const GraphQLQueries = {
     }
   `,
 
-  getAllOpenZigguratsWithOperator: `
-    query GetAllOpenZiggurats($operator: String!) {
-      ziggurats(where: { isClosed: false, operator: $operator }) {
+  getAllOpenActsWithOperator: `
+    query GetAllOpenActs($operator: String!) {
+      acts(where: { isClosed: false, operator: $operator }) {
         items {
           address
         }

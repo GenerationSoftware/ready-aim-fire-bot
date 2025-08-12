@@ -58,7 +58,17 @@
         "internalType": "contract DeckConfiguration"
       },
       {
+        "name": "_playerDeckManager",
+        "type": "address",
+        "internalType": "contract PlayerDeckManager"
+      },
+      {
         "name": "enforceAdjacency",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "turnTimerEnabled",
         "type": "bool",
         "internalType": "bool"
       }
@@ -123,6 +133,12 @@
         "type": "address",
         "indexed": false,
         "internalType": "contract PlayerStatsStorage"
+      },
+      {
+        "name": "playerDeckManager",
+        "type": "address",
+        "indexed": false,
+        "internalType": "contract PlayerDeckManager"
       }
     ],
     "anonymous": false

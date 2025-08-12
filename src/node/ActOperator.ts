@@ -1,16 +1,16 @@
 import { createPublicClient, createWalletClient, encodeFunctionData, type Abi, keccak256, encodePacked } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
-import ZigguratABI from "../contracts/abis/Ziggurat.json";
+import ActABI from "../contracts/abis/Act.json";
 import { forwardTransaction } from "../forwarder/forwardTransaction";
-import { createGraphQLClient, GraphQLQueries, type Party, type ZigguratRoom } from "../utils/graphql";
+import { createGraphQLClient, GraphQLQueries, type Party, type ActRoom } from "../utils/graphql";
 import { createAuthenticatedHttpTransport } from "../utils/rpc";
 import { createLogger } from "../utils/logger";
 import type { Logger } from "pino";
 
 import type { EventAggregator } from "./EventAggregator";
 
-export interface ZigguratOperatorConfig {
+export interface ActOperatorConfig {
   ethRpcUrl: string;
   ethWsRpcUrl: string;
   graphqlUrl: string;
@@ -18,12 +18,12 @@ export interface ZigguratOperatorConfig {
   operatorPrivateKey: string;
   relayerUrl: string;
   erc2771ForwarderAddress: string;
-  zigguratAddress: string;
+  actAddress: string;
   eventAggregator: EventAggregator;
 }
 
-export class ZigguratOperator {
-  private config: ZigguratOperatorConfig;
+export class ActOperator {
+  private config: ActOperatorConfig;
   private intervalId?: NodeJS.Timeout;
   private isRunning: boolean = false;
   private lastCheckTime: number = 0;
@@ -32,9 +32,9 @@ export class ZigguratOperator {
   private processingParties: Set<string> = new Set(); // Track parties being processed
   private recentlyProcessedParties: Map<string, number> = new Map(); // Track recently processed parties with timestamp
 
-  constructor(config: ZigguratOperatorConfig) {
+  constructor(config: ActOperatorConfig) {
     this.config = config;
-    this.logger = createLogger({ operator: 'ZigguratOperator', zigguratAddress: config.zigguratAddress });
+    this.logger = createLogger({ operator: 'ActOperator', actAddress: config.actAddress });
   }
 
   private log(...args: any[]) {
@@ -79,8 +79,8 @@ export class ZigguratOperator {
     this.eventUnsubscribes.push(
       this.config.eventAggregator.subscribe({
         eventName: "PartyStartedEvent",
-        abi: ZigguratABI as any[],
-        address: this.config.zigguratAddress,
+        abi: ActABI as any[],
+        address: this.config.actAddress,
         onEvent: async (logs: any[]) => {
           for (const log of logs) {
             this.log("PartyStartedEvent received:", {
@@ -96,8 +96,8 @@ export class ZigguratOperator {
     this.eventUnsubscribes.push(
       this.config.eventAggregator.subscribe({
         eventName: "NextRoomChosenEvent",
-        abi: ZigguratABI as any[],
-        address: this.config.zigguratAddress,
+        abi: ActABI as any[],
+        address: this.config.actAddress,
         onEvent: async (logs: any[]) => {
           for (const log of logs) {
             this.log("NextRoomChosenEvent received:", {
@@ -114,8 +114,8 @@ export class ZigguratOperator {
     this.eventUnsubscribes.push(
       this.config.eventAggregator.subscribe({
         eventName: "RoomRevealedEvent",
-        abi: ZigguratABI as any[],
-        address: this.config.zigguratAddress,
+        abi: ActABI as any[],
+        address: this.config.actAddress,
         onEvent: async (logs: any[]) => {
           for (const log of logs) {
             this.log("RoomRevealedEvent received:", {
@@ -128,7 +128,7 @@ export class ZigguratOperator {
             const graphqlClient = createGraphQLClient({ GRAPHQL_URL: this.config.graphqlUrl });
             try {
               const result = await graphqlClient.query<{partys: {items: Party[]}}>(GraphQLQueries.getPartiesWaitingForRoom, {
-                zigguratAddress: this.config.zigguratAddress.toLowerCase(),
+                actAddress: this.config.actAddress.toLowerCase(),
                 roomHash: log.args?.roomHash,
                 doorIndex: log.args?.doorIndex?.toString() || "0"
               });
@@ -153,8 +153,8 @@ export class ZigguratOperator {
     this.eventUnsubscribes.push(
       this.config.eventAggregator.subscribe({
         eventName: "RoomEnteredEvent",
-        abi: ZigguratABI as any[],
-        address: this.config.zigguratAddress,
+        abi: ActABI as any[],
+        address: this.config.actAddress,
         onEvent: async (logs: any[]) => {
           for (const log of logs) {
             this.log("RoomEnteredEvent received:", {
@@ -176,8 +176,8 @@ export class ZigguratOperator {
     this.eventUnsubscribes.push(
       this.config.eventAggregator.subscribe({
         eventName: "BattleStartedEvent",
-        abi: ZigguratABI as any[],
-        address: this.config.zigguratAddress,
+        abi: ActABI as any[],
+        address: this.config.actAddress,
         onEvent: async (logs: any[]) => {
           for (const log of logs) {
             this.log("BattleStartedEvent received:", {
@@ -250,8 +250,8 @@ export class ZigguratOperator {
     try {
       // Get the specific party from GraphQL
       const graphqlClient = createGraphQLClient({ GRAPHQL_URL: this.config.graphqlUrl });
-      const result = await graphqlClient.query<{partys: {items: Party[]}}>(GraphQLQueries.getSpecificPartyByZiggurat, {
-        zigguratAddress: this.config.zigguratAddress.toLowerCase(),
+      const result = await graphqlClient.query<{partys: {items: Party[]}}>(GraphQLQueries.getSpecificPartyByAct, {
+        actAddress: this.config.actAddress.toLowerCase(),
         partyId: partyId.toString()
       });
 
@@ -272,10 +272,10 @@ export class ZigguratOperator {
 
   private async checkAllPartiesProgress(): Promise<boolean> {
     try {
-      // Use GraphQL to get all DOOR_CHOSEN parties for this ziggurat
+      // Use GraphQL to get all DOOR_CHOSEN parties for this arc
       const graphqlClient = createGraphQLClient({ GRAPHQL_URL: this.config.graphqlUrl });
-      const result = await graphqlClient.query<{ partys: { items: Party[] } }>(GraphQLQueries.getPartiesByZigguratWithStateDoorChosen, {
-        zigguratAddress: this.config.zigguratAddress.toLowerCase()
+      const result = await graphqlClient.query<{ partys: { items: Party[] } }>(GraphQLQueries.getPartiesByActWithStateDoorChosen, {
+        actAddress: this.config.actAddress.toLowerCase()
       });
 
       const doorChosenParties = result.partys.items;
@@ -329,18 +329,18 @@ export class ZigguratOperator {
     // Use GraphQL to check if specific room has been revealed
     const graphqlClient = createGraphQLClient({ GRAPHQL_URL: this.config.graphqlUrl });
     
-    const roomsResult = await graphqlClient.query<{ zigguratRooms: { items: ZigguratRoom[] } | null }>(GraphQLQueries.getSpecificZigguratRoom, {
-      zigguratAddress: this.config.zigguratAddress.toLowerCase(),
+    const roomsResult = await graphqlClient.query<{ actRooms: { items: ActRoom[] } | null }>(GraphQLQueries.getSpecificActRoom, {
+      actAddress: this.config.actAddress.toLowerCase(),
       parentRoomHash: parentRoomHash,
       parentDoorIndex: chosenDoorIndex
     });
 
-    if (!roomsResult.zigguratRooms) {
-      this.error("No zigguratRooms data received from GraphQL");
+    if (!roomsResult.actRooms) {
+      this.error("No actRooms data received from GraphQL");
       return;
     }
 
-    const existingRoom = roomsResult.zigguratRooms.items[0]; // Should be 0 or 1 results
+    const existingRoom = roomsResult.actRooms.items[0]; // Should be 0 or 1 results
 
     this.log(`Party ${partyId} door ${chosenDoorIndex} status:`, { 
       roomExists: !!existingRoom,
@@ -401,7 +401,7 @@ export class ZigguratOperator {
       // Create the message to sign according to the contract
       this.log('Creating signature with params:', {
         chainId: chainId,
-        contractAddress: this.config.zigguratAddress,
+        contractAddress: this.config.actAddress,
         roomHash: roomHash,
         doorIndex: doorIndex,
         operatorAddress: account.address
@@ -410,7 +410,7 @@ export class ZigguratOperator {
       const messageHash = keccak256(
         encodePacked(
           ['uint256', 'address', 'bytes32', 'uint256'],
-          [BigInt(chainId), this.config.zigguratAddress as `0x${string}`, roomHash as `0x${string}`, BigInt(doorIndex)]
+          [BigInt(chainId), this.config.actAddress as `0x${string}`, roomHash as `0x${string}`, BigInt(doorIndex)]
         )
       );
 
@@ -427,7 +427,7 @@ export class ZigguratOperator {
 
       // Encode the revealDoor function call
       const data = encodeFunctionData({
-        abi: ZigguratABI as Abi,
+        abi: ActABI as Abi,
         functionName: 'revealDoor',
         args: [roomHash, doorIndex, signature]
       });
@@ -439,7 +439,7 @@ export class ZigguratOperator {
       try {
         hash = await forwardTransaction(
           {
-            to: this.config.zigguratAddress as `0x${string}`,
+            to: this.config.actAddress as `0x${string}`,
             data: data,
             rpcUrl: this.config.ethRpcUrl,
             relayerUrl: this.config.relayerUrl,
@@ -493,7 +493,7 @@ export class ZigguratOperator {
 
       // Encode the enterDoor function call
       const data = encodeFunctionData({
-        abi: ZigguratABI as Abi,
+        abi: ActABI as Abi,
         functionName: 'enterDoor',
         args: [partyId]
       });
@@ -505,7 +505,7 @@ export class ZigguratOperator {
       try {
         hash = await forwardTransaction(
           {
-            to: this.config.zigguratAddress as `0x${string}`,
+            to: this.config.actAddress as `0x${string}`,
             data: data,
             rpcUrl: this.config.ethRpcUrl,
             relayerUrl: this.config.relayerUrl,

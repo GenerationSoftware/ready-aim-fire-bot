@@ -28,7 +28,7 @@ export type OperatorType =
   | 'OperatorManager'
   | 'CharacterOperator'
   | 'BattleOperator'
-  | 'ZigguratOperator'
+  | 'ActOperator'
   | 'EventAggregator'
   | 'GraphQL'
   | 'RPC'
@@ -38,7 +38,7 @@ export interface LoggerContext {
   operator: OperatorType;
   gameAddress?: string;
   playerId?: string;
-  zigguratAddress?: string;
+  actAddress?: string;
   battleAddress?: string;
 }
 
@@ -62,7 +62,7 @@ export function createLogger(context: LoggerContext): pino.Logger {
     operator: context.operator,
     ...(context.gameAddress && { gameAddress: context.gameAddress }),
     ...(context.playerId && { playerId: context.playerId }),
-    ...(context.zigguratAddress && { zigguratAddress: context.zigguratAddress }),
+    ...(context.actAddress && { actAddress: context.actAddress }),
     ...(context.battleAddress && { battleAddress: context.battleAddress }),
   });
   

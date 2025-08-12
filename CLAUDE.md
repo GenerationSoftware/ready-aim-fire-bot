@@ -36,7 +36,7 @@ This is a Cloudflare Workers-based gaming bot system for the "Battle" blockchain
 - Handles turn timing and game state transitions
 - Combines GraphQL metadata with real-time contract calls
 
-**ZigguratOperator** (`src/ZigguratOperator.ts`) - Ziggurat dungeon manager that:
+**ActOperator** (`src/ActOperator.ts`) - Act dungeon manager that:
 - Uses GraphQL to discover active parties and room revelation status
 - Monitors party progress through dungeon rooms
 - Automatically calls `enterDoor()` when parties are ready to advance
@@ -68,8 +68,8 @@ The system primarily uses a GraphQL indexer at `GRAPHQL_URL` for efficient block
 **Key GraphQL Queries:**
 - `getBattlesWithOperator` - Find battles where address is operator
 - `getMonsters` - Find battle players where address is character
-- `getPartiesByZigguratWithStateDoorChosen` - Find active parties in ziggurat dungeons
-- `getZigguratRooms` - Get room revelation status and structure
+- `getPartiesByActWithStateDoorChosen` - Find active parties in act dungeons
+- `getActRooms` - Get room revelation status and structure
 - `getBattlePlayers` - Get players in specific battles
 - `getBattleTurns` - Get turn history and metadata
 
@@ -84,9 +84,11 @@ The system primarily uses a GraphQL indexer at `GRAPHQL_URL` for efficient block
 The system interacts with several smart contracts:
 - **Battle** - Main game contract
 - **BattleFactory** - Game creation factory
-- **Ziggurat** - Dungeon exploration contract
-- **BasicDeck** - Card collection contract  
+- **Act** - Dungeon exploration contract
+- **StandardDeck** - Card collection contract  
 - **Minter** - Handles card minting for new players
+- **Season** - Manages series of Acts with current and historical tracking
+- **RoomRewards** - Handles rewards for dungeon room completion
 - **ERC2771Forwarder** - Meta-transaction relayer
 
 All transactions are forwarded through the ERC2771 pattern for gasless execution.
@@ -98,7 +100,7 @@ Critical environment variables defined in `src/Env.ts`:
 - **GRAPHQL_URL** - GraphQL indexer endpoint (e.g., http://localhost:42069/graphql)
 - **OPERATOR_ADDRESS** / **OPERATOR_PRIVATE_KEY** - Bot wallet credentials
 - **ERC2771_FORWARDER_ADDRESS** / **RELAYER_URL** - Meta-transaction infrastructure
-- Durable Object bindings for OPERATOR_MANAGER, CHARACTER_OPERATOR, BATTLE_OPERATOR, ZIGGURAT_OPERATOR
+- Durable Object bindings for OPERATOR_MANAGER, CHARACTER_OPERATOR, BATTLE_OPERATOR, ACT_OPERATOR
 - Contract addresses are loaded from `src/contracts/deployments.json` and `../core-contracts/deployments.json`
 
 ### Entry Points
@@ -131,10 +133,10 @@ The system uses a hybrid approach for blockchain data:
 The GraphQL indexer at `GRAPHQL_URL` provides the following main entity types:
 
 **Core Game Entities:**
-- **ziggurat** - Dungeon instance with rooms, parties, and configuration
-- **party** - Player group in ziggurat with state tracking (CREATED, DOOR_CHOSEN, IN_ROOM, ESCAPED, CANCELLED)
+- **act** - Dungeon instance with rooms, parties, and configuration
+- **party** - Player group in act with state tracking (CREATED, DOOR_CHOSEN, IN_ROOM, ESCAPED, CANCELLED)
 - **partyMember** - Individual character in a party
-- **zigguratRoom** - Dungeon room with parent/child relationships and revelation status
+- **actRoom** - Dungeon room with parent/child relationships and revelation status
 - **battle** - Game instance with turns, players, and game state
 - **battlePlayer** - Player participation in battle with location, team, and elimination status
 - **character** - Player character with owner, operator, and game associations
@@ -154,8 +156,8 @@ The GraphQL indexer at `GRAPHQL_URL` provides the following main entity types:
 **Key Relationships:**
 - Characters have battlePlayers, partyMembers, and cards
 - Battles have players and actions
-- Parties have members and belong to ziggurats
-- ZigguratRooms form hierarchical tree structures
+- Parties have members and belong to acts
+- ActRooms form hierarchical tree structures
 - All entities track creation/modification timestamps
 
 **Query Patterns:**

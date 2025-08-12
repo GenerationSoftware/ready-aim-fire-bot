@@ -1,11 +1,11 @@
 import { createPublicClient, type Abi } from "viem";
 import { arbitrum } from "viem/chains";
 import BattleABI from "../contracts/abis/Battle.json";
-import { createGraphQLClient, GraphQLQueries, queryAllPages, type Battle, type Character, type Ziggurat } from "../utils/graphql";
+import { createGraphQLClient, GraphQLQueries, queryAllPages, type Battle, type Character, type Act } from "../utils/graphql";
 import { createAuthenticatedHttpTransport } from "../utils/rpc";
 import { CharacterOperator } from "./CharacterOperator";
 import { BattleOperator } from "./BattleOperator";
-import { ZigguratOperator } from "./ZigguratOperator";
+import { ActOperator } from "./ActOperator";
 import { EventAggregator } from "./EventAggregator";
 import { createLogger } from "../utils/logger";
 import type { Logger } from "pino";
@@ -24,7 +24,7 @@ export class OperatorManager {
   private config: OperatorManagerConfig;
   private characterOperators: Map<string, CharacterOperator> = new Map();
   private battleOperators: Map<string, BattleOperator> = new Map();
-  private zigguratOperators: Map<string, ZigguratOperator> = new Map();
+  private actOperators: Map<string, ActOperator> = new Map();
   private eventAggregator: EventAggregator;
   private intervalId?: NodeJS.Timeout;
   private isRunning: boolean = false;
@@ -186,42 +186,42 @@ export class OperatorManager {
     }
   }
 
-  private async checkZigguratOperators() {
-    this.logger.debug("Checking ziggurat operators...");
+  private async checkActOperators() {
+    this.logger.debug("Checking act operators...");
     try {
       const graphqlClient = createGraphQLClient({ GRAPHQL_URL: this.config.graphqlUrl });
-      const result = await graphqlClient.query<{ ziggurats: { items: Ziggurat[] } }>(GraphQLQueries.getAllOpenZigguratsWithOperator, {
+      const result = await graphqlClient.query<{ acts: { items: Act[] } }>(GraphQLQueries.getAllOpenActsWithOperator, {
         operator: this.config.operatorAddress.toLowerCase()
       });
 
-    for (const zig of result.ziggurats.items) {
-      const zigAddress = zig.address.toLowerCase();
-      let operator = this.zigguratOperators.get(zigAddress);
+    for (const act of result.acts.items) {
+      const actAddress = act.address.toLowerCase();
+      let operator = this.actOperators.get(actAddress);
 
       if (!operator || !operator.isAlive()) {
         if (operator) {
-          this.logger.info(`ZigguratOperator ${zigAddress} is dead, restarting...`);
+          this.logger.info(`ActOperator ${actAddress} is dead, restarting...`);
           operator.stop();
         }
 
-        operator = new ZigguratOperator({
+        operator = new ActOperator({
           ...this.config,
-          zigguratAddress: zigAddress,
+          actAddress: actAddress,
           eventAggregator: this.eventAggregator
         });
 
-        this.zigguratOperators.set(zigAddress, operator);
+        this.actOperators.set(actAddress, operator);
         operator.start();
-        this.logger.info(`Started ZigguratOperator for ${zigAddress}`);
+        this.logger.info(`Started ActOperator for ${actAddress}`);
       } else {
-        this.logger.info(`ZigguratOperator running for ${zigAddress}`);
+        this.logger.info(`ActOperator running for ${actAddress}`);
       }
     }
     } catch (error: any) {
       if (error.message?.includes('GraphQL endpoint unavailable')) {
         this.logger.error("GraphQL endpoint is not available. Please ensure the indexer is running.");
       } else {
-        this.logger.error("Error checking ziggurat operators:", error);
+        this.logger.error("Error checking act operators:", error);
       }
     }
   }
@@ -229,7 +229,7 @@ export class OperatorManager {
   private async checkAndStartBots(): Promise<void> {
     await this.checkCharacterOperators();
     await this.checkBattleOperators();
-    await this.checkZigguratOperators();
+    await this.checkActOperators();
   }
 
   async start(): Promise<void> {
@@ -291,11 +291,11 @@ export class OperatorManager {
     }
     this.battleOperators.clear();
 
-    for (const [key, operator] of this.zigguratOperators) {
-      this.logger.info(`Stopping ZigguratOperator ${key}`);
+    for (const [key, operator] of this.actOperators) {
+      this.logger.info(`Stopping ActOperator ${key}`);
       operator.stop();
     }
-    this.zigguratOperators.clear();
+    this.actOperators.clear();
 
     // Stop the event aggregator
     this.eventAggregator.stop();
@@ -313,7 +313,7 @@ export class OperatorManager {
         key,
         alive: op.isAlive()
       })),
-      zigguratOperators: Array.from(this.zigguratOperators.entries()).map(([key, op]) => ({
+      actOperators: Array.from(this.actOperators.entries()).map(([key, op]) => ({
         key,
         alive: op.isAlive()
       })),

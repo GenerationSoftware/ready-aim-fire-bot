@@ -10,7 +10,7 @@
       {
         "name": "_basicDeck",
         "type": "address",
-        "internalType": "contract BasicDeck"
+        "internalType": "contract StandardDeck"
       }
     ],
     "stateMutability": "nonpayable"
@@ -23,7 +23,7 @@
       {
         "name": "",
         "type": "address",
-        "internalType": "contract BasicDeck"
+        "internalType": "contract StandardDeck"
       }
     ],
     "stateMutability": "view"

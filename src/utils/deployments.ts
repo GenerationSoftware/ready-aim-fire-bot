@@ -10,15 +10,16 @@ export function getContractAddress(contractName: string): string {
 
 export const CONTRACT_ADDRESSES = {
   BATTLE: getContractAddress('Battle'),
-  BASIC_DECK: getContractAddress('BasicDeck'),
-  BASIC_DECK_LOGIC: getContractAddress('BasicDeckLogic'),
+  STANDARD_DECK: getContractAddress('StandardDeck'),
+  STANDARD_DECK_LOGIC: getContractAddress('StandardDeckLogic'),
   MINTER: getContractAddress('Minter'),
   BATTLE_FACTORY: getContractAddress('BattleFactory'),
   MONSTER_REGISTRY: getContractAddress('MonsterRegistry'),
   CHARACTER_FACTORY: getContractAddress('CharacterFactory'),
   DECK_CONFIGURATION: getContractAddress('DeckConfiguration'),
-  ZIGGURAT_SINGLETON: getContractAddress('ZigguratSingleton'),
-  ZIGGURAT: getContractAddress('Ziggurat'),
+  SEASON: getContractAddress('Season'),
+  ACT: getContractAddress('Act'),
+  ROOM_REWARDS: getContractAddress('RoomRewards'),
 } as const;
 
 export function getDeployments() {
