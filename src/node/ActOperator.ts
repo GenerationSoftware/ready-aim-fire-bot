@@ -127,11 +127,12 @@ export class ActOperator {
       this.log(`Processed ${this.roomMap.size} rooms from map`);
 
     } catch (error: any) {
-      this.error("Error fetching or processing map:", {
+      this.error(`Error fetching or processing map: ${error.message || error}`, {
         message: error.message,
         stack: error.stack,
         rafApiUrl: this.config.rafApiUrl || process.env.RAF_API_URL,
-        actAddress: this.config.actAddress
+        actAddress: this.config.actAddress,
+        error: error.toString()
       });
     }
   }
@@ -140,13 +141,24 @@ export class ActOperator {
     // Calculate the room hash for this node
     const roomHash = this.calculateRoomHash(parentRoomHash, childIndex);
     
-    // Create the Room struct
+    // Create the Room struct - ensure all values are defined
     const room: Room = {
-      depth: depth,
-      roomType: node.type,
-      doorCount: node.doors,
-      monsterIndex1: node.monster1 || 0
+      depth: depth ?? 0,
+      roomType: node.type ?? 0,
+      doorCount: node.doors ?? 0,
+      monsterIndex1: node.monster1 ?? 0
     };
+    
+    // Validate room before storing
+    if (room.depth === undefined || room.roomType === undefined || 
+        room.doorCount === undefined || room.monsterIndex1 === undefined) {
+      this.error(`Invalid room data for hash ${roomHash}:`, {
+        node: node,
+        depth: depth,
+        room: room
+      });
+      return;
+    }
 
     // Store in the map
     this.roomMap.set(roomHash, room);
@@ -174,16 +186,6 @@ export class ActOperator {
     return keccak256(encoded);
   }
 
-  private getRoomForPartyDoor(parentRoomHash: string, doorIndex: number): Room | undefined {
-    const roomHash = this.calculateRoomHash(parentRoomHash, doorIndex);
-    const room = this.roomMap.get(roomHash);
-    
-    if (!room) {
-      this.error(`Room not found for hash ${roomHash} (parent: ${parentRoomHash}, door: ${doorIndex})`);
-    }
-    
-    return room;
-  }
 
   async start() {
     if (this.isRunning) {
@@ -222,6 +224,7 @@ export class ActOperator {
             this.log("PartyStartedEvent received:", {
               partyId: log.args?.partyId?.toString()
             });
+            // Check if party needs to enter a room
             await this.checkSinglePartyProgress(log.args?.partyId);
           }
         }
@@ -238,8 +241,9 @@ export class ActOperator {
           for (const log of logs) {
             this.log("NextRoomChosenEvent received:", {
               partyId: log.args?.partyId?.toString(),
-              doorIndex: log.args?.doorIndex?.toString()
+              roomHash: log.args?.roomHash
             });
+            // Check if party needs to enter a room
             await this.checkSinglePartyProgress(log.args?.partyId);
           }
         }
@@ -310,8 +314,11 @@ export class ActOperator {
     for (const unsubscribe of this.eventUnsubscribes) {
       try {
         unsubscribe();
-      } catch (error) {
-        this.error("Error unsubscribing from event:", error);
+      } catch (error: any) {
+        this.error("Error unsubscribing from event:", {
+          message: error.message,
+          stack: error.stack
+        });
       }
     }
     this.eventUnsubscribes = [];
@@ -342,8 +349,11 @@ export class ActOperator {
         this.log("No active parties found, stopping operator");
         this.stop();
       }
-    } catch (error) {
-      this.error("Error in periodic check:", error);
+    } catch (error: any) {
+      this.error("Error in periodic check:", {
+        message: error.message,
+        stack: error.stack
+      });
     }
   }
 
@@ -363,34 +373,43 @@ export class ActOperator {
         this.log(`Processing party ${partyId} after event`);
         await this.checkParty(partyId, party);
       } else {
-        this.log(`Party ${partyId} not found or not in DOOR_CHOSEN state`);
+        this.log(`Party ${partyId} not found or not in ROOM_CHOSEN state`);
       }
 
-    } catch (error) {
-      this.error(`Error in checkSinglePartyProgress for party ${partyId}:`, error);
+    } catch (error: any) {
+      this.error(`Error in checkSinglePartyProgress for party ${partyId}:`, {
+        message: error.message,
+        stack: error.stack,
+        partyId: partyId.toString()
+      });
     }
   }
 
   private async checkAllPartiesProgress(): Promise<boolean> {
     try {
-      // Use GraphQL to get all DOOR_CHOSEN parties for this arc
+      // Use GraphQL to get all ROOM_CHOSEN parties for this act
       const graphqlClient = createGraphQLClient({ GRAPHQL_URL: this.config.graphqlUrl });
-      const result = await graphqlClient.query<{ partys: { items: Party[] } }>(GraphQLQueries.getPartiesByActWithStateDoorChosen, {
+      const result = await graphqlClient.query<{ partys: { items: Party[] } }>(GraphQLQueries.getPartiesByActWithStateRoomChosen, {
         actAddress: this.config.actAddress.toLowerCase()
       });
 
-      const doorChosenParties = result.partys.items;
+      const roomChosenParties = result.partys.items;
       
-      this.log("Periodic check - Door chosen parties:", doorChosenParties.length);
+      this.log(`Periodic check - Found ${roomChosenParties.length} parties in ROOM_CHOSEN state`);
 
-      // Check each party to see if they need operator intervention
-      for (const party of doorChosenParties) {
+      // Check each party to see if they need to enter their chosen room
+      for (const party of roomChosenParties) {
         await this.checkParty(BigInt(party.partyId), party);
       }
 
+      // Always return true to keep the operator running
+      // The operator will handle parties as they appear
       return true;
-    } catch (error) {
-      this.error("Error in checkAllPartiesProgress:", error);
+    } catch (error: any) {
+      this.error("Error in checkAllPartiesProgress:", {
+        message: error.message,
+        stack: error.stack
+      });
       return true; // Continue running even on error
     }
   }
@@ -417,30 +436,34 @@ export class ActOperator {
     try {
       this.log(`Checking party ${partyId}:`, { 
         state: partyGraphQLData.state,
-        roomHash: partyGraphQLData.roomHash,
-        chosenDoor: partyGraphQLData.chosenDoor
+        roomHash: partyGraphQLData.roomHash
       });
       
-      // Party is guaranteed to be in DOOR_CHOSEN state from GraphQL filter
+      // Party is guaranteed to be in ROOM_CHOSEN state from GraphQL filter
+      // The roomHash field contains the hash of the room they want to enter
       
-      // Use GraphQL data
-      const parentRoomHash = partyGraphQLData.roomHash;
-      const chosenDoorIndex = Number(partyGraphQLData.chosenDoor);
-
-    // In the new Act contract, rooms are revealed automatically when entering
-    // Get the room data for the door the party wants to enter
-    const room = this.getRoomForPartyDoor(parentRoomHash, chosenDoorIndex);
-    
-    if (!room) {
-      this.error(`Cannot find room data for party ${partyId} trying to enter door ${chosenDoorIndex} from room ${parentRoomHash}`);
-      return;
-    }
-    
-    this.log(`Party ${partyId} is ready to enter door ${chosenDoorIndex} to room type ${room.roomType}`);
-    await this.executeEnterDoor(partyId, room);
-    
-    // Mark party as successfully processed
-    this.recentlyProcessedParties.set(partyKey, Date.now());
+      if (!partyGraphQLData.roomHash || partyGraphQLData.roomHash === "") {
+        this.error(`Party ${partyId} in ROOM_CHOSEN state but has no roomHash`);
+        return;
+      }
+      
+      // The roomHash is the room they want to enter
+      const roomHashToEnter = partyGraphQLData.roomHash;
+      
+      // Get the room data from our map
+      const room = this.roomMap.get(roomHashToEnter);
+      
+      if (!room) {
+        this.error(`Room not found in map for hash ${roomHashToEnter} (party ${partyId})`);
+        this.log(`Available room hashes in map (first 10): ${Array.from(this.roomMap.keys()).slice(0, 10).join(', ')}...`);
+        return;
+      }
+      
+      this.log(`Party ${partyId} entering room at hash ${roomHashToEnter} (type: ${room.roomType})`);
+      await this.executeEnterRoom(partyId, room);
+      
+      // Mark party as successfully processed
+      this.recentlyProcessedParties.set(partyKey, Date.now());
     
     // Clean up old entries (older than 60 seconds)
     const cutoffTime = Date.now() - 60000;
@@ -450,8 +473,12 @@ export class ActOperator {
       }
     }
     
-    } catch (error) {
-      this.error(`Error processing party ${partyId}:`, error);
+    } catch (error: any) {
+      this.error(`Error processing party ${partyId}:`, {
+        message: error.message,
+        stack: error.stack,
+        partyId: partyId.toString()
+      });
     } finally {
       // Always remove from processing set
       this.processingParties.delete(partyKey);
@@ -459,9 +486,25 @@ export class ActOperator {
   }
 
 
-  private async executeEnterDoor(partyId: bigint, room: Room): Promise<void> {
+  private async executeEnterRoom(partyId: bigint, room: Room): Promise<void> {
     try {
-      this.log(`Executing enterDoor for party ${partyId} with room:`, room);
+      this.log(`Executing enterRoom for party ${partyId} with room:`, {
+        depth: room?.depth,
+        roomType: room?.roomType,
+        doorCount: room?.doorCount,
+        monsterIndex1: room?.monsterIndex1,
+        room: room
+      });
+
+      // Validate room struct
+      if (!room || room.depth === undefined || room.roomType === undefined || 
+          room.doorCount === undefined || room.monsterIndex1 === undefined) {
+        this.error(`Invalid room struct for party ${partyId}:`, {
+          room: room,
+          partyId: partyId.toString()
+        });
+        return;
+      }
 
       // Create wallet client for sending transactions
       const account = privateKeyToAccount(this.config.operatorPrivateKey as `0x${string}`);
@@ -471,14 +514,14 @@ export class ActOperator {
         transport: createAuthenticatedHttpTransport(this.config.ethRpcUrl, { ETH_RPC_URL: this.config.ethRpcUrl })
       });
 
-      // Encode the enterDoor function call with the Room struct
+      // Encode the enterRoom function call with the Room struct
       const data = encodeFunctionData({
         abi: ActABI as Abi,
-        functionName: 'enterDoor',
+        functionName: 'enterRoom',
         args: [partyId, room]
       });
 
-      this.log("Calling enterDoor for party", partyId, "with room type", room.roomType);
+      this.log("Calling enterRoom for party", partyId, "with room type", room.roomType);
 
       // Forward the transaction
       let hash;
@@ -497,14 +540,19 @@ export class ActOperator {
       } catch (error: any) {
         // Check for specific error types
         if (error.message?.includes('InvalidPartyStateError')) {
-          this.log(`Party ${partyId} is no longer in DOOR_CHOSEN state, skipping`);
+          this.log(`Party ${partyId} is no longer in ROOM_CHOSEN state, skipping`);
           return;
         }
-        this.error("Error forwarding enterDoor transaction:", error);
+        this.error(`Error forwarding enterRoom transaction: ${error.message || error}`, {
+          error: error.message || error,
+          stack: error.stack,
+          partyId: partyId.toString(),
+          room: room
+        });
         return;
       }
 
-      this.log("EnterDoor transaction forwarded:", hash);
+      this.log("EnterRoom transaction forwarded:", hash);
 
       // Wait for transaction receipt
       if (hash) {
@@ -514,15 +562,24 @@ export class ActOperator {
             transport: createAuthenticatedHttpTransport(this.config.ethRpcUrl, { ETH_RPC_URL: this.config.ethRpcUrl })
           });
           const receipt = await publicClient.waitForTransactionReceipt({ hash });
-          this.log("EnterDoor transaction confirmed:", receipt);
-        } catch (error) {
-          this.error("Error waiting for enterDoor transaction receipt:", error);
+          this.log("EnterRoom transaction confirmed:", receipt);
+        } catch (error: any) {
+          this.error(`Error waiting for enterRoom transaction receipt: ${error.message || error}`, {
+            error: error.message || error,
+            stack: error.stack,
+            partyId: partyId.toString()
+          });
         }
       } else {
         this.error("No transaction hash received from forwardTransaction for party", partyId);
       }
-    } catch (error) {
-      this.error(`Error executing enterDoor for party ${partyId}:`, error);
+    } catch (error: any) {
+      this.error(`Error executing enterRoom for party ${partyId}: ${error.message || error}`, {
+        error: error.message || error,
+        stack: error.stack,
+        partyId: partyId.toString(),
+        room: room
+      });
     }
   }
 }

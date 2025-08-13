@@ -203,7 +203,7 @@
   },
   {
     "type": "function",
-    "name": "chooseDoor",
+    "name": "chooseRoom",
     "inputs": [
       {
         "name": "_partyId",
@@ -211,7 +211,7 @@
         "internalType": "uint256"
       },
       {
-        "name": "_chosenDoorIndex",
+        "name": "_chosenRoomIndex",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -324,7 +324,7 @@
   },
   {
     "type": "function",
-    "name": "enterDoor",
+    "name": "enterRoom",
     "inputs": [
       {
         "name": "_partyId",
@@ -1063,10 +1063,10 @@
         "internalType": "uint256"
       },
       {
-        "name": "doorIndex",
-        "type": "uint256",
+        "name": "roomHash",
+        "type": "bytes32",
         "indexed": true,
-        "internalType": "uint256"
+        "internalType": "bytes32"
       }
     ],
     "anonymous": false
@@ -1304,17 +1304,17 @@
   },
   {
     "type": "error",
-    "name": "InvalidDoorIndexError",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "InvalidOperator",
     "inputs": []
   },
   {
     "type": "error",
     "name": "InvalidPartyStateError",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidRoomIndexError",
     "inputs": []
   },
   {

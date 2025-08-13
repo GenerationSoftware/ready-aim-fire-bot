@@ -129,7 +129,7 @@ export async function queryAllPages<T extends { items: any[] }>(
 // GraphQL types based on schema introspection
 export enum PartyState {
   CREATED,
-  DOOR_CHOSEN,
+  ROOM_CHOSEN,
   IN_ROOM,
   ESCAPED,
   CANCELLED
@@ -143,7 +143,6 @@ export interface Party {
   isPublic: boolean;
   inviter: string;
   roomHash: string;
-  chosenDoor: string;
   state: PartyState;
   createdAt: string;
   startedAt: string | null;
@@ -204,7 +203,7 @@ export interface Act {
 // Use the queryAllPages utility function when you need to fetch all results
 export const GraphQLQueries = {
   // Act queries
-  getPartiesByActWithStateDoorChosen: `
+  getPartiesByActWithStateRoomChosen: `
     query GetPartiesByAct($actAddress: String!, $limit: Int, $after: String) {
       partys(where: { actAddress: $actAddress, state: "1" }, limit: $limit, after: $after) {
         items {
@@ -215,7 +214,6 @@ export const GraphQLQueries = {
           isPublic
           inviter
           roomHash
-          chosenDoor
           state
           createdAt
           startedAt
@@ -240,52 +238,6 @@ export const GraphQLQueries = {
     }
   `,
 
-  getSpecificActRoom: `
-    query GetSpecificActRoom($actAddress: String!, $parentRoomHash: String!, $parentDoorIndex: BigInt!) {
-      actRooms(where: { 
-        actAddress: $actAddress, 
-        parentRoomHash: $parentRoomHash, 
-        parentDoorIndex: $parentDoorIndex 
-      }) {
-        items {
-          id
-          actAddress
-          roomHash
-          parentRoomHash
-          parentDoorIndex
-          revealedAt
-        }
-      }
-    }
-  `,
-
-  getPartiesWaitingForRoom: `
-    query GetPartiesWaitingForRoom($actAddress: String!, $roomHash: String!, $doorIndex: BigInt!) {
-      partys(where: { 
-        actAddress: $actAddress, 
-        roomHash: $roomHash, 
-        chosenDoor: $doorIndex, 
-        state: "1",
-        endedAt: "0"
-      }) {
-        items {
-          id
-          actAddress
-          partyId
-          leader
-          isPublic
-          inviter
-          roomHash
-          chosenDoor
-          state
-          createdAt
-          startedAt
-          endedAt
-        }
-      }
-    }
-  `,
-
   getSpecificPartyByAct: `
     query GetSpecificPartyByAct($actAddress: String!, $partyId: String!) {
       partys(where: { actAddress: $actAddress, partyId: $partyId}) {
@@ -297,7 +249,6 @@ export const GraphQLQueries = {
           isPublic
           inviter
           roomHash
-          chosenDoor
           state
           createdAt
           startedAt
