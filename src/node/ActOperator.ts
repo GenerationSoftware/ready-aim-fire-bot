@@ -18,14 +18,14 @@ interface Room {
   monsterIndex1: number;
 }
 
-// Map node from the JSON
+// Map node from the JSON schema
 interface MapNode {
-  type: number;
-  doors: number;
-  monster1?: number;
-  monster2?: number;
-  monster3?: number;
-  children?: MapNode[];
+  id: number;
+  depth: number;
+  roomType: string; // "ROOT" or "MONSTER"
+  doorCount: number;
+  monsterIndex1: string | null; // "GOBLIN", "THICC_GOBLIN", "TROLL", "ORC", or null
+  children: MapNode[];
 }
 
 export interface ActOperatorConfig {
@@ -123,7 +123,7 @@ export class ActOperator {
       this.log("Map data fetched successfully");
 
       // Process the map into room hash -> Room struct mapping
-      this.processMapNode(mapData, this.rootRoomHash, 0, 0);
+      this.processMapNode(mapData, this.rootRoomHash, 0);
       this.log(`Processed ${this.roomMap.size} rooms from map`);
 
     } catch (error: any) {
@@ -137,16 +137,30 @@ export class ActOperator {
     }
   }
 
-  private processMapNode(node: MapNode, parentRoomHash: string, childIndex: number, depth: number = 0): void {
+  private processMapNode(node: MapNode, parentRoomHash: string, childIndex: number): void {
     // Calculate the room hash for this node
     const roomHash = this.calculateRoomHash(parentRoomHash, childIndex);
     
-    // Create the Room struct - ensure all values are defined
+    // Convert monster string to index number (0-based)
+    const monsterTypeToIndex: Record<string, number> = {
+      'GOBLIN': 0,
+      'THICC_GOBLIN': 1,
+      'TROLL': 2,
+      'ORC': 3
+    };
+    
+    // Get monster index or 0 for no monster/root
+    const monsterIndex = node.monsterIndex1 ? (monsterTypeToIndex[node.monsterIndex1] || 0) : 0;
+    
+    // Convert roomType to number (0 for ROOT, 1+ for MONSTER rooms)
+    const roomTypeNum = node.roomType === 'ROOT' ? 0 : 1;
+    
+    // Create the Room struct using the correct property names
     const room: Room = {
-      depth: depth ?? 0,
-      roomType: node.type ?? 0,
-      doorCount: node.doors ?? 0,
-      monsterIndex1: node.monster1 ?? 0
+      depth: node.depth ?? 0,
+      roomType: roomTypeNum,
+      doorCount: node.doorCount ?? 0,
+      monsterIndex1: monsterIndex
     };
     
     // Validate room before storing
@@ -154,7 +168,6 @@ export class ActOperator {
         room.doorCount === undefined || room.monsterIndex1 === undefined) {
       this.error(`Invalid room data for hash ${roomHash}:`, {
         node: node,
-        depth: depth,
         room: room
       });
       return;
@@ -162,11 +175,13 @@ export class ActOperator {
 
     // Store in the map
     this.roomMap.set(roomHash, room);
+    
+    this.log(`Stored room: hash=${roomHash}, depth=${room.depth}, type=${room.roomType}, doors=${room.doorCount}, monster=${room.monsterIndex1}`);
 
     // Process children recursively
-    if (node.children) {
+    if (node.children && node.children.length > 0) {
       node.children.forEach((childNode, index) => {
-        this.processMapNode(childNode, roomHash, index, depth + 1);
+        this.processMapNode(childNode, roomHash, index);
       });
     }
   }
