@@ -12,6 +12,19 @@
   },
   {
     "type": "function",
+    "name": "FIRST_MONSTER_INDEX",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "addMonster",
     "inputs": [
       {
@@ -32,8 +45,45 @@
         ]
       }
     ],
-    "outputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "getCharacterAndStats",
+    "inputs": [
+      {
+        "name": "index",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "character",
+        "type": "address",
+        "internalType": "contract Character"
+      },
+      {
+        "name": "monsterStats",
+        "type": "tuple",
+        "internalType": "struct MonsterStats",
+        "components": [
+          {
+            "name": "health",
+            "type": "uint8",
+            "internalType": "uint8"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -148,6 +198,12 @@
             "internalType": "uint8"
           }
         ]
+      },
+      {
+        "name": "index",
+        "type": "uint16",
+        "indexed": true,
+        "internalType": "uint16"
       }
     ],
     "anonymous": false
@@ -170,6 +226,11 @@
       }
     ],
     "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "MaxMonstersReached",
+    "inputs": []
   },
   {
     "type": "error",

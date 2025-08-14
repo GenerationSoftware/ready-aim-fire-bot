@@ -17,15 +17,15 @@ interface Room {
   monsterIndex1: number;
   monsterIndex2: number;
   monsterIndex3: number;
-  nextRooms: number[]; // uint32[7] array
+  nextRooms: number[]; // uint32[6] array
 }
 
 // Map room from the JSON - flat array structure
 interface MapRoom {
   id: number;
-  roomType: string; // "BATTLE" or "GOAL"
-  monsterIndex1: number; // Monster index (0 for no monster/goal rooms)
-  nextRooms: number[]; // Array of next room IDs (up to 7)
+  roomType: number; // 0=NULL, 1=BATTLE, 2=GOAL
+  monsterIndex1: number | null; // Monster index (0-65535) or null
+  nextRooms: number[]; // Array of next room IDs (up to 6)
 }
 
 export interface ActOperatorConfig {
@@ -211,29 +211,24 @@ export class ActOperator {
   private processMapRooms(mapRooms: MapRoom[]): void {
     // Process each room in the flat array
     for (const mapRoom of mapRooms) {
-      // Convert roomType string to number
-      // 1 = BATTLE, 2 = GOAL
-      let roomTypeNum: number;
-      if (mapRoom.roomType === 'BATTLE') {
-        roomTypeNum = 1;
-      } else if (mapRoom.roomType === 'GOAL') {
-        roomTypeNum = 2;
-      } else {
-        // Unknown room type
-        this.error(`Unknown room type: ${mapRoom.roomType} for room ${mapRoom.id}`);
-        roomTypeNum = 0;
-      }
+      // roomType is already a number: 0=NULL, 1=BATTLE, 2=GOAL
+      const roomTypeNum = mapRoom.roomType;
       
-      // Ensure nextRooms array is exactly 7 elements
+      // monsterIndex1 is now directly an integer or null
+      const monsterIndex = mapRoom.monsterIndex1 ?? 0;
+      
+      // Ensure nextRooms array is exactly 6 elements
       const nextRooms = [...mapRoom.nextRooms];
-      while (nextRooms.length < 7) {
+      while (nextRooms.length < 6) {
         nextRooms.push(0);
       }
+      // Trim to exactly 6 if somehow longer
+      nextRooms.splice(6);
       
       // Create the Room struct matching the Solidity structure
       const room: Room = {
         roomType: roomTypeNum,
-        monsterIndex1: mapRoom.monsterIndex1,
+        monsterIndex1: monsterIndex,
         monsterIndex2: 0, // Not used in current map format
         monsterIndex3: 0, // Not used in current map format
         nextRooms: nextRooms
@@ -242,7 +237,8 @@ export class ActOperator {
       // Store the room by its ID
       this.roomMap.set(mapRoom.id, room);
       
-      this.log(`Stored room: id=${mapRoom.id}, type=${mapRoom.roomType}(${roomTypeNum}), monster=${room.monsterIndex1}, nextRooms=[${nextRooms.filter(r => r > 0).join(',')}]`);
+      const roomTypeStr = roomTypeNum === 0 ? 'NULL' : roomTypeNum === 1 ? 'BATTLE' : roomTypeNum === 2 ? 'GOAL' : 'UNKNOWN';
+      this.log(`Stored room: id=${mapRoom.id}, type=${roomTypeStr}(${roomTypeNum}), monster=${monsterIndex}, nextRooms=[${nextRooms.filter(r => r > 0).join(',')}]`);
     }
   }
 

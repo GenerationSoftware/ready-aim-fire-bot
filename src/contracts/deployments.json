@@ -1,80 +1,80 @@
 [
   {
     "contractName": "Battle",
-    "contractAddress": "0x35537453acce3d10693be0569e890ecdc031e0d5",
-    "transactionHash": "0x31ae12a9b75039c3c0e55bbaee5343ec54446238ababe13672d5fa09a89d9291",
-    "blockNumber": "0x5b1bdb"
+    "contractAddress": "0x62230858ff7038de9a0b784ef822979c74d2ca68",
+    "transactionHash": "0xb32d4276b2d8e9ba9a37372c1f6e0a876984bec998dfbc63d61b6976ddb67b47",
+    "blockNumber": "0x5b3bfc"
   },
   {
     "contractName": "StandardDeck",
-    "contractAddress": "0xa5c09eda78fbe54fd9c220a88dd66dadd84368f7",
-    "transactionHash": "0x097759b5ea27c89bbc9186055f23f139bc3ee10ad48493c98d9f911921540a1c",
-    "blockNumber": "0x5b1bdc"
+    "contractAddress": "0x1a15d54a11baf456218bfdc0764dc6d3a7381e1c",
+    "transactionHash": "0x42c88817c118b4cd24c8d137d22cd4d716856247929e6ead419cf939666d3838",
+    "blockNumber": "0x5b3bfd"
   },
   {
     "contractName": "StandardDeckLogic",
-    "contractAddress": "0x0d2b835c97c70495ed03004501672c1e9dfcae9c",
-    "transactionHash": "0x2d00f7624d0bcf5d39fa7a19e24eae311c75208e8a7141ddb13c9682ea991d95",
-    "blockNumber": "0x5b1bdd"
+    "contractAddress": "0x9aa346ae50c895c65e7cdb01bbc7d93fa7cb8888",
+    "transactionHash": "0x525b5f21d4eb69c539b0e104db3fe96cd5174ccfe3cb41906edf3188215064aa",
+    "blockNumber": "0x5b3bfd"
   },
   {
     "contractName": "DeckConfiguration",
-    "contractAddress": "0x545de90366fe5639c84879465a911ebdeedf14dc",
-    "transactionHash": "0x7d34f71759cdf0d5fdc6ba8c923d5882f40028b04c1ebfc1c3290c8f041c94dd",
-    "blockNumber": "0x5b1bdd"
+    "contractAddress": "0xaa2ce67861058c456486c72fe94309b2681ff0c4",
+    "transactionHash": "0x895df3574bcc4973bdc6c6346771297759191489e87f4747499f15bf94a044c5",
+    "blockNumber": "0x5b3bfd"
   },
   {
     "contractName": "Minter",
-    "contractAddress": "0xfdeb3cd3415bbd6886d89c1990b0c909f0f083f3",
-    "transactionHash": "0x84454e47e938c1495687bee5e081cee5a54d85ec5d797bd7d5a9044de1a6a24a",
-    "blockNumber": "0x5b1bdd"
+    "contractAddress": "0x6eb7f8e2e2039f4cde29259dc208dd2207c850c3",
+    "transactionHash": "0x75dd0607681258367253c8e2dd906842ce4889b6f6c72e82a39faae7d1cbc8d1",
+    "blockNumber": "0x5b3bfd"
   },
   {
     "contractName": "BattleFactory",
-    "contractAddress": "0xbe43ea54d6b442501389e030352d9d8d063a1c8e",
-    "transactionHash": "0xeb9d7bc8303b957fcf9e1b0b877c0894c19725cec1236047637a7b530d2cbddb",
-    "blockNumber": "0x5b1bdd"
+    "contractAddress": "0x28d2533321690cc83f6b5e739b19e3ca994fbfe2",
+    "transactionHash": "0x46873c20995884184a2081ca2ffa66567dda36cc1b3f02de938aeff61cafea8e",
+    "blockNumber": "0x5b3bfd"
   },
   {
     "contractName": "MonsterRegistry",
-    "contractAddress": "0x0f9a9a9da08a52a4c4461f35ba0232a374ccf306",
-    "transactionHash": "0xa6ed5bea99baf3ba4d4eb53c70c4157b8a53a718aeaca8d8a906bafda369580b",
-    "blockNumber": "0x5b1bdd"
+    "contractAddress": "0x30dd305873c65fa0bf1bcd3b674f6fa051bcf0ea",
+    "transactionHash": "0xe3328e614e72652fb9260e24950113d73572883e6b1a7980e9431c52bd3dad0c",
+    "blockNumber": "0x5b3bfe"
   },
   {
     "contractName": "CharacterFactory",
-    "contractAddress": "0x110baf6119bd32bc69bf2b37e94acd152f5fc671",
-    "transactionHash": "0xeeac48d67d40688fbadefcd979f40a399a930e454a92ff94fdbdd18a42bb7b2e",
-    "blockNumber": "0x5b1bde"
+    "contractAddress": "0xe48937f1e98146a34c6ce32f271a54c65e84c697",
+    "transactionHash": "0xacb1f36b38583bf7324fe0075e03f21049e126ea5645980ed3b364ff45830eac",
+    "blockNumber": "0x5b3bfe"
   },
   {
     "contractName": "PlayerDeckManager",
-    "contractAddress": "0x50ff72f3dd9b56895a26333ad52e3cc9cd3a3ebf",
-    "transactionHash": "0x59b36459353e1fe503d4e05508ecb0a13f768a8f1850a8371b8e46f451dd4e16",
-    "blockNumber": "0x5b1bde"
+    "contractAddress": "0xecea5331039447e64b61670dc44afd9fd904de2b",
+    "transactionHash": "0x8056c0b28751f07fd58643259f85abb92082844942cf29030ad58fb9ad2096f3",
+    "blockNumber": "0x5b3bfe"
   },
   {
     "contractName": "Season",
-    "contractAddress": "0x2a615dd4144604f0c281f8214f077f06d8d20997",
-    "transactionHash": "0x79dbd7ae53634f2e3af3c9e188495406cfc2bbebb98668cb90e7d437a1082156",
-    "blockNumber": "0x5b1bde"
+    "contractAddress": "0x5e4d7872a965963c1f892c18d80b8cc181e5c97c",
+    "transactionHash": "0x702f01cc07c22d9319385a5e15633150fc58e18f6ba06b73a7e007771800273c",
+    "blockNumber": "0x5b3bfe"
   },
   {
     "contractName": "BattleRoom",
-    "contractAddress": "0x4ea23774b5b2e5e80fcfb6622aebeade4f0dd7df",
-    "transactionHash": "0xa550cdb319a3b66fe6e8eb32fee5393f8798ebb22ab3e960a41e8b248d301ad2",
-    "blockNumber": "0x5b1bdf"
+    "contractAddress": "0xd179b101ad5de6dc1d8e0c05377a925554f2760f",
+    "transactionHash": "0xdc872b1515172eceff9b3836b6b1952f6e1361e1d58be4b7a54b7c29a5918b29",
+    "blockNumber": "0x5b3bfe"
   },
   {
     "contractName": "Act",
-    "contractAddress": "0x80fdda4a60ef8a1426f08626e36b6323481bf6bd",
-    "transactionHash": "0xc7cb879383e1e97e60991ab9a6f7fcc69d59ff641295a487e0e0cdd7f5aa881a",
-    "blockNumber": "0x5b1bdf"
+    "contractAddress": "0x35454eff75591674596fd5f34ebfa9f0b75ee9fa",
+    "transactionHash": "0x7744da84f437df0ae5e7758cb09f05b84b22762251be786d61015b430250a599",
+    "blockNumber": "0x5b3bff"
   },
   {
     "contractName": "RoomRewards",
-    "contractAddress": "0x91d820c29985a2fadd38a3e61d3eee66e4cb3c6c",
-    "transactionHash": "0x3bfbd65b6ead82e22626eb562dd58605314c9d45de23ba46b97255abb94bcb23",
-    "blockNumber": "0x5b1be5"
+    "contractAddress": "0xaee601ce46cb75c4c6db5ba2e06153effc92e495",
+    "transactionHash": "0x815c47662a3ab48b9b51097d8c0dfe63747ba2ac10537b995abbfacf045608d1",
+    "blockNumber": "0x5b3c05"
   }
 ]

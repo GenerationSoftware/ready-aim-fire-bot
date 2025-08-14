@@ -118,28 +118,28 @@
         "components": [
           {
             "name": "roomType",
-            "type": "uint8",
-            "internalType": "uint8"
+            "type": "uint16",
+            "internalType": "uint16"
           },
           {
             "name": "monsterIndex1",
-            "type": "uint8",
-            "internalType": "uint8"
+            "type": "uint16",
+            "internalType": "uint16"
           },
           {
             "name": "monsterIndex2",
-            "type": "uint8",
-            "internalType": "uint8"
+            "type": "uint16",
+            "internalType": "uint16"
           },
           {
             "name": "monsterIndex3",
-            "type": "uint8",
-            "internalType": "uint8"
+            "type": "uint16",
+            "internalType": "uint16"
           },
           {
             "name": "nextRooms",
-            "type": "uint32[7]",
-            "internalType": "uint32[7]"
+            "type": "uint32[6]",
+            "internalType": "uint32[6]"
           }
         ]
       },
