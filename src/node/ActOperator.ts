@@ -1,7 +1,8 @@
-import { createPublicClient, createWalletClient, encodeFunctionData, type Abi, keccak256, encodeAbiParameters } from "viem";
+import { createPublicClient, createWalletClient, encodeFunctionData, type Abi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
 import ActABI from "../contracts/abis/Act.json";
+import BattleRoomABI from "../contracts/abis/BattleRoom.json";
 import { forwardTransaction } from "../forwarder/forwardTransaction";
 import { createGraphQLClient, GraphQLQueries, type Party, type ActRoom } from "../utils/graphql";
 import { createAuthenticatedHttpTransport } from "../utils/rpc";
@@ -12,20 +13,19 @@ import type { EventAggregator } from "./EventAggregator";
 
 // Room struct matching the Solidity contract
 interface Room {
-  depth: number;
   roomType: number;
-  doorCount: number;
   monsterIndex1: number;
+  monsterIndex2: number;
+  monsterIndex3: number;
+  nextRooms: number[]; // uint32[7] array
 }
 
-// Map node from the JSON schema
-interface MapNode {
+// Map room from the JSON - flat array structure
+interface MapRoom {
   id: number;
-  depth: number;
-  roomType: string; // "ROOT" or "MONSTER"
-  doorCount: number;
-  monsterIndex1: string | null; // "GOBLIN", "THICC_GOBLIN", "TROLL", "ORC", or null
-  children: MapNode[];
+  roomType: string; // "BATTLE" or "GOAL"
+  monsterIndex1: number; // Monster index (0 for no monster/goal rooms)
+  nextRooms: number[]; // Array of next room IDs (up to 7)
 }
 
 export interface ActOperatorConfig {
@@ -52,8 +52,9 @@ export class ActOperator {
   private eventUnsubscribes: Array<() => void> = [];
   private processingParties: Set<string> = new Set(); // Track parties being processed
   private recentlyProcessedParties: Map<string, number> = new Map(); // Track recently processed parties with timestamp
-  private roomMap: Map<string, Room> = new Map(); // Cache of room hash to Room struct
-  private rootRoomHash?: string; // Cache the root room hash
+  private roomMap: Map<number, Room> = new Map(); // Cache of room ID to Room struct
+  private startingRoomId?: number; // Cache the starting room ID
+  private battleRoomAddress?: string; // Cache the BattleRoom contract address
 
   constructor(config: ActOperatorConfig) {
     this.config = config;
@@ -88,23 +89,84 @@ export class ActOperator {
         return;
       }
 
-      // Get the root room hash from the contract
+      // Get the starting room ID from the contract
       const publicClient = createPublicClient({
         chain: arbitrum,
         transport: createAuthenticatedHttpTransport(this.config.ethRpcUrl, { ETH_RPC_URL: this.config.ethRpcUrl })
       });
 
-      this.rootRoomHash = await publicClient.readContract({
+      this.startingRoomId = Number(await publicClient.readContract({
         address: this.config.actAddress as `0x${string}`,
         abi: ActABI as Abi,
-        functionName: 'ROOT_ROOM_HASH'
+        functionName: 'STARTING_ROOM_ID'
+      }));
+
+      this.log(`Starting room ID: ${this.startingRoomId}`);
+      
+      // Get the BattleRoom contract address
+      this.battleRoomAddress = await publicClient.readContract({
+        address: this.config.actAddress as `0x${string}`,
+        abi: ActABI as Abi,
+        functionName: 'battleRoom'
       }) as string;
+      
+      this.log(`BattleRoom address: ${this.battleRoomAddress}`);
 
-      this.log(`Root room hash: ${this.rootRoomHash}`);
+      // Query GraphQL to get season name and act index for this act
+      const graphqlClient = createGraphQLClient({ GRAPHQL_URL: this.config.graphqlUrl });
+      
+      // First get the seasonAct to find the season and act index
+      const seasonActQuery = `
+        query GetSeasonActInfo($actAddress: String!) {
+          seasonActs(where: { actAddress: $actAddress }) {
+            items {
+              seasonAddress
+              actIndex
+              actAddress
+            }
+          }
+        }
+      `;
+      
+      const seasonActResult = await graphqlClient.query<{ seasonActs: { items: any[] } }>(seasonActQuery, {
+        actAddress: this.config.actAddress.toLowerCase()
+      });
 
-      // Fetch the map JSON
-      const actAddressLowercase = this.config.actAddress.toLowerCase();
-      const mapUrl = `${rafApiUrl}/act/${actAddressLowercase}/map.json`;
+      if (!seasonActResult.seasonActs.items || seasonActResult.seasonActs.items.length === 0) {
+        this.error(`SeasonAct not found in GraphQL for address ${this.config.actAddress}`);
+        return;
+      }
+
+      const seasonActInfo = seasonActResult.seasonActs.items[0];
+      const actIndex = seasonActInfo.actIndex;
+      
+      // Now get the season name
+      const seasonQuery = `
+        query GetSeasonInfo($seasonAddress: String!) {
+          seasons(where: { address: $seasonAddress }) {
+            items {
+              address
+              name
+            }
+          }
+        }
+      `;
+      
+      const seasonResult = await graphqlClient.query<{ seasons: { items: any[] } }>(seasonQuery, {
+        seasonAddress: seasonActInfo.seasonAddress.toLowerCase()
+      });
+
+      if (!seasonResult.seasons.items || seasonResult.seasons.items.length === 0) {
+        this.error(`Season not found in GraphQL for address ${seasonActInfo.seasonAddress}`);
+        return;
+      }
+
+      const seasonName = seasonResult.seasons.items[0].name;
+      
+      this.log(`Act info: season=${seasonName}, actIndex=${actIndex}`);
+
+      // Fetch the map JSON with new URL structure
+      const mapUrl = `${rafApiUrl}/season/${seasonName}/act/${actIndex}/map.json`;
       
       this.log(`Fetching map from: ${mapUrl}`);
       
@@ -119,11 +181,20 @@ export class ActOperator {
         throw new Error(`Failed to fetch map: ${response.status} ${response.statusText}`);
       }
 
-      const mapData = await response.json() as MapNode;
-      this.log("Map data fetched successfully");
+      const mapResponse: any = await response.json();
+      this.log(`Map data fetched successfully - raw response type: ${typeof mapResponse}, isArray: ${Array.isArray(mapResponse)}`);
+      
+      // The response should be a direct array of rooms
+      if (!Array.isArray(mapResponse)) {
+        this.error(`Expected array but got: ${JSON.stringify(mapResponse).substring(0, 500)}`);
+        throw new Error(`Map response is not an array`);
+      }
+      
+      const mapData = mapResponse as MapRoom[];
+      this.log(`Processing ${mapData.length} rooms from map`);
 
-      // Process the map into room hash -> Room struct mapping
-      this.processMapNode(mapData, this.rootRoomHash, 0);
+      // Process the flat array of rooms into room ID -> Room struct mapping
+      this.processMapRooms(mapData);
       this.log(`Processed ${this.roomMap.size} rooms from map`);
 
     } catch (error: any) {
@@ -137,69 +208,44 @@ export class ActOperator {
     }
   }
 
-  private processMapNode(node: MapNode, parentRoomHash: string, childIndex: number): void {
-    // Calculate the room hash for this node
-    const roomHash = this.calculateRoomHash(parentRoomHash, childIndex);
-    
-    // Convert monster string to index number (0-based)
-    const monsterTypeToIndex: Record<string, number> = {
-      'GOBLIN': 0,
-      'THICC_GOBLIN': 1,
-      'TROLL': 2,
-      'ORC': 3
-    };
-    
-    // Get monster index or 0 for no monster/root
-    const monsterIndex = node.monsterIndex1 ? (monsterTypeToIndex[node.monsterIndex1] || 0) : 0;
-    
-    // Convert roomType to number (0 for ROOT, 1+ for MONSTER rooms)
-    const roomTypeNum = node.roomType === 'ROOT' ? 0 : 1;
-    
-    // Create the Room struct using the correct property names
-    const room: Room = {
-      depth: node.depth ?? 0,
-      roomType: roomTypeNum,
-      doorCount: node.doorCount ?? 0,
-      monsterIndex1: monsterIndex
-    };
-    
-    // Validate room before storing
-    if (room.depth === undefined || room.roomType === undefined || 
-        room.doorCount === undefined || room.monsterIndex1 === undefined) {
-      this.error(`Invalid room data for hash ${roomHash}:`, {
-        node: node,
-        room: room
-      });
-      return;
-    }
-
-    // Store in the map
-    this.roomMap.set(roomHash, room);
-    
-    this.log(`Stored room: hash=${roomHash}, depth=${room.depth}, type=${room.roomType}, doors=${room.doorCount}, monster=${room.monsterIndex1}`);
-
-    // Process children recursively
-    if (node.children && node.children.length > 0) {
-      node.children.forEach((childNode, index) => {
-        this.processMapNode(childNode, roomHash, index);
-      });
+  private processMapRooms(mapRooms: MapRoom[]): void {
+    // Process each room in the flat array
+    for (const mapRoom of mapRooms) {
+      // Convert roomType string to number
+      // 1 = BATTLE, 2 = GOAL
+      let roomTypeNum: number;
+      if (mapRoom.roomType === 'BATTLE') {
+        roomTypeNum = 1;
+      } else if (mapRoom.roomType === 'GOAL') {
+        roomTypeNum = 2;
+      } else {
+        // Unknown room type
+        this.error(`Unknown room type: ${mapRoom.roomType} for room ${mapRoom.id}`);
+        roomTypeNum = 0;
+      }
+      
+      // Ensure nextRooms array is exactly 7 elements
+      const nextRooms = [...mapRoom.nextRooms];
+      while (nextRooms.length < 7) {
+        nextRooms.push(0);
+      }
+      
+      // Create the Room struct matching the Solidity structure
+      const room: Room = {
+        roomType: roomTypeNum,
+        monsterIndex1: mapRoom.monsterIndex1,
+        monsterIndex2: 0, // Not used in current map format
+        monsterIndex3: 0, // Not used in current map format
+        nextRooms: nextRooms
+      };
+      
+      // Store the room by its ID
+      this.roomMap.set(mapRoom.id, room);
+      
+      this.log(`Stored room: id=${mapRoom.id}, type=${mapRoom.roomType}(${roomTypeNum}), monster=${room.monsterIndex1}, nextRooms=[${nextRooms.filter(r => r > 0).join(',')}]`);
     }
   }
 
-  private calculateRoomHash(parentRoomHash: string, childIndex: number): string {
-    // If this is the root node
-    if (parentRoomHash === this.rootRoomHash && childIndex === 0) {
-      return this.rootRoomHash!;
-    }
-
-    // Calculate hash as keccak256(abi.encode(parentRoomHash, childIndex))
-    const encoded = encodeAbiParameters(
-      [{ type: 'bytes32' }, { type: 'uint256' }],
-      [parentRoomHash as `0x${string}`, BigInt(childIndex)]
-    );
-    
-    return keccak256(encoded);
-  }
 
 
   async start() {
@@ -256,7 +302,7 @@ export class ActOperator {
           for (const log of logs) {
             this.log("NextRoomChosenEvent received:", {
               partyId: log.args?.partyId?.toString(),
-              roomHash: log.args?.roomHash
+              roomId: log.args?.roomId?.toString()
             });
             // Check if party needs to enter a room
             await this.checkSinglePartyProgress(log.args?.partyId);
@@ -279,7 +325,7 @@ export class ActOperator {
           for (const log of logs) {
             this.log("RoomEnteredEvent received:", {
               partyId: log.args?.partyId?.toString(),
-              roomHash: log.args?.roomHash
+              roomId: log.args?.roomId?.toString()
             });
             // Mark this party as recently processed since they've already entered
             const partyKey = log.args?.partyId?.toString();
@@ -292,28 +338,33 @@ export class ActOperator {
       })
     );
 
-    // Subscribe to BattleStartedEvent - parties in battle don't need door processing
-    this.eventUnsubscribes.push(
-      this.config.eventAggregator.subscribe({
-        eventName: "BattleStartedEvent",
-        abi: ActABI as any[],
-        address: this.config.actAddress,
-        onEvent: async (logs: any[]) => {
-          for (const log of logs) {
-            this.log("BattleStartedEvent received:", {
-              partyId: log.args?.partyId?.toString(),
-              battleAddress: log.args?.battleAddress
-            });
-            // Mark this party as recently processed since they're in battle
-            const partyKey = log.args?.partyId?.toString();
-            if (partyKey) {
-              this.recentlyProcessedParties.set(partyKey, Date.now());
-              this.log(`Party ${partyKey} has started battle, marking as processed`);
+    // Subscribe to BattleStarted event from BattleRoom contract
+    if (this.battleRoomAddress) {
+      this.eventUnsubscribes.push(
+        this.config.eventAggregator.subscribe({
+          eventName: "BattleStarted",
+          abi: BattleRoomABI as any[],
+          address: this.battleRoomAddress,
+          onEvent: async (logs: any[]) => {
+            for (const log of logs) {
+              this.log("BattleStarted event received:", {
+                battleAddress: log.args?.battleAddress,
+                actAddress: log.args?.actAddress,
+                partyId: log.args?.partyId?.toString()
+              });
+              // Mark this party as recently processed since they're in battle
+              const partyKey = log.args?.partyId?.toString();
+              if (partyKey) {
+                this.recentlyProcessedParties.set(partyKey, Date.now());
+                this.log(`Party ${partyKey} has started battle, marking as processed`);
+              }
             }
           }
-        }
-      })
-    );
+        })
+      );
+    } else {
+      this.error("BattleRoom address not found, cannot subscribe to BattleStarted event");
+    }
   }
 
   stop() {
@@ -451,30 +502,30 @@ export class ActOperator {
     try {
       this.log(`Checking party ${partyId}:`, { 
         state: partyGraphQLData.state,
-        roomHash: partyGraphQLData.roomHash
+        roomId: partyGraphQLData.roomId
       });
       
       // Party is guaranteed to be in ROOM_CHOSEN state from GraphQL filter
-      // The roomHash field contains the hash of the room they want to enter
+      // The roomId field contains the ID of the room they want to enter
       
-      if (!partyGraphQLData.roomHash || partyGraphQLData.roomHash === "") {
-        this.error(`Party ${partyId} in ROOM_CHOSEN state but has no roomHash`);
+      if (!partyGraphQLData.roomId || partyGraphQLData.roomId === "") {
+        this.error(`Party ${partyId} in ROOM_CHOSEN state but has no roomId`);
         return;
       }
       
-      // The roomHash is the room they want to enter
-      const roomHashToEnter = partyGraphQLData.roomHash;
+      // Convert roomId string to number
+      const roomIdToEnter = Number(partyGraphQLData.roomId);
       
       // Get the room data from our map
-      const room = this.roomMap.get(roomHashToEnter);
+      const room = this.roomMap.get(roomIdToEnter);
       
       if (!room) {
-        this.error(`Room not found in map for hash ${roomHashToEnter} (party ${partyId})`);
-        this.log(`Available room hashes in map (first 10): ${Array.from(this.roomMap.keys()).slice(0, 10).join(', ')}...`);
+        this.error(`Room not found in map for ID ${roomIdToEnter} (party ${partyId})`);
+        this.log(`Available room IDs in map (first 10): ${Array.from(this.roomMap.keys()).slice(0, 10).join(', ')}...`);
         return;
       }
       
-      this.log(`Party ${partyId} entering room at hash ${roomHashToEnter} (type: ${room.roomType})`);
+      this.log(`Party ${partyId} entering room ID ${roomIdToEnter} (type: ${room.roomType})`);
       await this.executeEnterRoom(partyId, room);
       
       // Mark party as successfully processed
@@ -504,16 +555,18 @@ export class ActOperator {
   private async executeEnterRoom(partyId: bigint, room: Room): Promise<void> {
     try {
       this.log(`Executing enterRoom for party ${partyId} with room:`, {
-        depth: room?.depth,
         roomType: room?.roomType,
-        doorCount: room?.doorCount,
         monsterIndex1: room?.monsterIndex1,
+        monsterIndex2: room?.monsterIndex2,
+        monsterIndex3: room?.monsterIndex3,
+        nextRooms: room?.nextRooms,
         room: room
       });
 
       // Validate room struct
-      if (!room || room.depth === undefined || room.roomType === undefined || 
-          room.doorCount === undefined || room.monsterIndex1 === undefined) {
+      if (!room || room.roomType === undefined || 
+          room.monsterIndex1 === undefined || room.monsterIndex2 === undefined ||
+          room.monsterIndex3 === undefined || !room.nextRooms) {
         this.error(`Invalid room struct for party ${partyId}:`, {
           room: room,
           partyId: partyId.toString()

@@ -18,137 +18,170 @@
         "internalType": "address"
       },
       {
-        "name": "_name",
-        "type": "string",
-        "internalType": "string"
+        "name": "_battleFactory",
+        "type": "address",
+        "internalType": "contract BattleFactory"
+      },
+      {
+        "name": "_deckConfiguration",
+        "type": "address",
+        "internalType": "contract DeckConfiguration"
+      },
+      {
+        "name": "_monsterRegistry",
+        "type": "address",
+        "internalType": "contract MonsterRegistry"
+      },
+      {
+        "name": "_playerDeckManager",
+        "type": "address",
+        "internalType": "contract PlayerDeckManager"
       }
     ],
     "stateMutability": "nonpayable"
   },
   {
     "type": "function",
-    "name": "acts",
-    "inputs": [
+    "name": "TURN_DURATION",
+    "inputs": [],
+    "outputs": [
       {
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "contract Act"
       }
     ],
     "stateMutability": "view"
   },
   {
     "type": "function",
-    "name": "createParty",
+    "name": "battleFactory",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract BattleFactory"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "cleanupParty",
     "inputs": [
       {
-        "name": "actIndex",
+        "name": "partyId",
         "type": "uint256",
         "internalType": "uint256"
       },
       {
-        "name": "character",
+        "name": "roomIds",
+        "type": "uint32[]",
+        "internalType": "uint32[]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "deckConfiguration",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
         "type": "address",
-        "internalType": "contract Character"
+        "internalType": "contract DeckConfiguration"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "enterRoom",
+    "inputs": [
+      {
+        "name": "partyId",
+        "type": "uint256",
+        "internalType": "uint256"
       },
       {
-        "name": "tokens",
-        "type": "tuple[]",
-        "internalType": "struct Token[]",
+        "name": "roomId",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "room",
+        "type": "tuple",
+        "internalType": "struct Room",
         "components": [
           {
-            "name": "deck",
-            "type": "address",
-            "internalType": "contract IDeck"
+            "name": "roomType",
+            "type": "uint8",
+            "internalType": "uint8"
           },
           {
-            "name": "tokenId",
-            "type": "uint96",
-            "internalType": "uint96"
+            "name": "monsterIndex1",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "monsterIndex2",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "monsterIndex3",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "nextRooms",
+            "type": "uint32[7]",
+            "internalType": "uint32[7]"
           }
         ]
       },
       {
-        "name": "inviter",
-        "type": "address",
-        "internalType": "address"
+        "name": "partyMembers",
+        "type": "address[]",
+        "internalType": "contract Character[]"
       },
       {
-        "name": "isPublic",
-        "type": "bool",
-        "internalType": "bool"
+        "name": "partyDeckIds",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
       }
     ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
+    "outputs": [],
     "stateMutability": "nonpayable"
   },
   {
     "type": "function",
-    "name": "getAct",
+    "name": "getRoomOutcome",
     "inputs": [
       {
-        "name": "index",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
+        "name": "act",
         "type": "address",
         "internalType": "contract Act"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "getActsCount",
-    "inputs": [],
-    "outputs": [
+      },
       {
-        "name": "",
+        "name": "partyId",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "roomId",
+        "type": "uint32",
+        "internalType": "uint32"
       }
     ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "getAllActs",
-    "inputs": [],
     "outputs": [
       {
-        "name": "",
-        "type": "address[]",
-        "internalType": "contract Act[]"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "getCurrentAct",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "contract Act"
+        "name": "won",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -161,6 +194,35 @@
         "name": "_addy",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isRoomCompleted",
+    "inputs": [
+      {
+        "name": "act",
+        "type": "address",
+        "internalType": "contract Act"
+      },
+      {
+        "name": "partyId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "roomId",
+        "type": "uint32",
+        "internalType": "uint32"
       }
     ],
     "outputs": [
@@ -193,98 +255,13 @@
   },
   {
     "type": "function",
-    "name": "joinParty",
-    "inputs": [
-      {
-        "name": "actIndex",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "character",
-        "type": "address",
-        "internalType": "contract Character"
-      },
-      {
-        "name": "tokens",
-        "type": "tuple[]",
-        "internalType": "struct Token[]",
-        "components": [
-          {
-            "name": "deck",
-            "type": "address",
-            "internalType": "contract IDeck"
-          },
-          {
-            "name": "tokenId",
-            "type": "uint96",
-            "internalType": "uint96"
-          }
-        ]
-      },
-      {
-        "name": "partyId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "joinPartyWithInvite",
-    "inputs": [
-      {
-        "name": "actIndex",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "character",
-        "type": "address",
-        "internalType": "contract Character"
-      },
-      {
-        "name": "tokens",
-        "type": "tuple[]",
-        "internalType": "struct Token[]",
-        "components": [
-          {
-            "name": "deck",
-            "type": "address",
-            "internalType": "contract IDeck"
-          },
-          {
-            "name": "tokenId",
-            "type": "uint96",
-            "internalType": "uint96"
-          }
-        ]
-      },
-      {
-        "name": "partyId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "signature",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "name",
+    "name": "monsterRegistry",
     "inputs": [],
     "outputs": [
       {
         "name": "",
-        "type": "string",
-        "internalType": "string"
+        "type": "address",
+        "internalType": "contract MonsterRegistry"
       }
     ],
     "stateMutability": "view"
@@ -317,29 +294,45 @@
   },
   {
     "type": "function",
-    "name": "popAct",
+    "name": "partyBattles",
+    "inputs": [
+      {
+        "name": "act",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "partyId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "roomId",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "battle",
+        "type": "address",
+        "internalType": "contract Battle"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "playerDeckManager",
     "inputs": [],
     "outputs": [
       {
         "name": "",
         "type": "address",
-        "internalType": "contract Act"
+        "internalType": "contract PlayerDeckManager"
       }
     ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "pushAct",
-    "inputs": [
-      {
-        "name": "_act",
-        "type": "address",
-        "internalType": "contract Act"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -368,6 +361,29 @@
         "name": "data",
         "type": "bytes",
         "internalType": "bytes"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "startBattle",
+    "inputs": [
+      {
+        "name": "act",
+        "type": "address",
+        "internalType": "contract Act"
+      },
+      {
+        "name": "partyId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "roomId",
+        "type": "uint32",
+        "internalType": "uint32"
       }
     ],
     "outputs": [],
@@ -414,7 +430,7 @@
   },
   {
     "type": "event",
-    "name": "ActAdded",
+    "name": "BattleCreated",
     "inputs": [
       {
         "name": "act",
@@ -423,17 +439,29 @@
         "internalType": "contract Act"
       },
       {
-        "name": "index",
+        "name": "partyId",
         "type": "uint256",
         "indexed": true,
         "internalType": "uint256"
+      },
+      {
+        "name": "roomId",
+        "type": "uint32",
+        "indexed": true,
+        "internalType": "uint32"
+      },
+      {
+        "name": "battle",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
       }
     ],
     "anonymous": false
   },
   {
     "type": "event",
-    "name": "ActRemoved",
+    "name": "BattleStarted",
     "inputs": [
       {
         "name": "act",
@@ -442,10 +470,16 @@
         "internalType": "contract Act"
       },
       {
-        "name": "index",
+        "name": "partyId",
         "type": "uint256",
         "indexed": true,
         "internalType": "uint256"
+      },
+      {
+        "name": "roomId",
+        "type": "uint32",
+        "indexed": true,
+        "internalType": "uint32"
       }
     ],
     "anonymous": false
@@ -489,44 +523,8 @@
     "anonymous": false
   },
   {
-    "type": "event",
-    "name": "SeasonCreated",
-    "inputs": [
-      {
-        "name": "trustedForwarder",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "owner",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "operator",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "name",
-        "type": "string",
-        "indexed": false,
-        "internalType": "string"
-      }
-    ],
-    "anonymous": false
-  },
-  {
     "type": "error",
-    "name": "AlreadyWonActError",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InvalidActIndexError",
+    "name": "BattleNotCompletedError",
     "inputs": []
   },
   {
@@ -536,7 +534,7 @@
   },
   {
     "type": "error",
-    "name": "MustWinPreviousActError",
+    "name": "NotBattleRoomError",
     "inputs": []
   },
   {
@@ -547,6 +545,11 @@
   {
     "type": "error",
     "name": "OnlyOwnerOrOperatorError",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "OnlyPartyLeaderError",
     "inputs": []
   },
   {
@@ -570,5 +573,10 @@
         "internalType": "address"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "RoomNotCompletedError",
+    "inputs": []
   }
 ]

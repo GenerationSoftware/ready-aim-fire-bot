@@ -289,9 +289,9 @@
         "internalType": "uint256"
       },
       {
-        "name": "roomHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
+        "name": "roomId",
+        "type": "uint32",
+        "internalType": "uint32"
       },
       {
         "name": "",
@@ -342,9 +342,9 @@
         "internalType": "uint256"
       },
       {
-        "name": "roomHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
+        "name": "roomId",
+        "type": "uint32",
+        "internalType": "uint32"
       },
       {
         "name": "",
@@ -563,10 +563,10 @@
         "internalType": "uint256"
       },
       {
-        "name": "roomHash",
-        "type": "bytes32",
+        "name": "roomId",
+        "type": "uint32",
         "indexed": true,
-        "internalType": "bytes32"
+        "internalType": "uint32"
       },
       {
         "name": "character",
@@ -662,10 +662,10 @@
         "internalType": "uint256"
       },
       {
-        "name": "roomHash",
-        "type": "bytes32",
+        "name": "roomId",
+        "type": "uint32",
         "indexed": true,
-        "internalType": "bytes32"
+        "internalType": "uint32"
       },
       {
         "name": "character",
@@ -735,10 +735,10 @@
         "internalType": "uint256"
       },
       {
-        "name": "roomHash",
-        "type": "bytes32",
+        "name": "roomId",
+        "type": "uint32",
         "indexed": true,
-        "internalType": "bytes32"
+        "internalType": "uint32"
       },
       {
         "name": "character",

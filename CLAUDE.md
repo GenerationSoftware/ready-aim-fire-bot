@@ -132,47 +132,44 @@ The system uses a hybrid approach for blockchain data:
 
 The GraphQL indexer at `GRAPHQL_URL` provides the following main entity types:
 
-**Core Game Entities:**
-- **act** - Dungeon instance with rooms, parties, and configuration
-- **party** - Player group in act with state tracking (CREATED, DOOR_CHOSEN, IN_ROOM, ESCAPED, CANCELLED)
-- **partyMember** - Individual character in a party
-- **actRoom** - Dungeon room with parent/child relationships and revelation status
-- **battle** - Game instance with turns, players, and game state
-- **battlePlayer** - Player participation in battle with location, team, and elimination status
-- **character** - Player character with owner, operator, and game associations
-- **monster** - Character registered as monster with health tracking
+**Important Note**: All list queries return results wrapped in `{ items: [...], pageInfo: {...}, totalCount: N }` structure with cursor-based pagination.
 
-**Game Action Tracking:**
-- **playerAction** - Battle actions with card usage and parameters
-- **characterCard** - Character's card collection with activation status
-- **basicDeckCard** - Card ownership and transfer history
+**Core Entities:**
 
-**Configuration & Metadata:**
-- **actionDefinition** - Card action definitions with energy costs
-- **actionEffect** - Effects associated with action definitions
-- **deckConfiguration** - Deck setup and rules
-- **playerStatsStorage** - Player statistics storage configuration
+**Season & Act Management:**
+- `season` - Season container (address, name, currentActIndex, owner, operator)
+- `seasonAct` - Links seasons to acts (seasonAddress, actIndex, actAddress)
+- `act` - Dungeon instance (address, rootRoomId, battleFactory, maxDepth, turnDuration, isClosed)
 
-**Key Relationships:**
-- Characters have battlePlayers, partyMembers, and cards
-- Battles have players and actions
-- Parties have members and belong to acts
-- ActRooms form hierarchical tree structures
-- All entities track creation/modification timestamps
+**Party System:**
+- `party` - Player group (id, actAddress, partyId, leader, roomId, battleAddress, state)
+  - States: CREATED(0), ROOM_CHOSEN(1), IN_ROOM(2), ESCAPED(3), CANCELLED(4)
+- `partyMember` - Character in party (partyId, characterId, joinedAt)
+
+**Room System:**
+- `actRoom` - Dungeon room (id, actAddress, roomId, roomType, monsterIndex1/2/3, battle)
+- `actRoomConnection` - Room connections (fromRoomId, toRoomId, slotIndex)
+
+**Character & Monster:**
+- `character` - Player character (id, owner, operator, name, cards, battlePlayers)
+- `monster` - Monster character (characterAddress, health, registeredAt)
+- `characterCard` - Character's cards (characterAddress, cardId, deck, tokenId, isActive)
+
+**Battle System:**
+- `battle` - Battle instance (id, operator, currentTurn, teamAEliminated, teamBEliminated, winner, gameStartedAt, gameEndedAt)
+- `battlePlayer` - Player in battle (battleAddress, playerId, character, locationX/Y, teamA, eliminated)
+- `playerAction` - Battle actions (battleAddress, playerId, turn, cardIndex, cardActionParams)
+
+**Card & Action System:**
+- `standardDeckCard` - Card ownership (deckAddress, tokenId, owner, actionType)
+- `actionDefinition` - Action definitions (deckLogicAddress, actionType, energy)
+- `actionEffect` - Action effects (actionDefinitionId, effectType, amount)
 
 **Query Patterns:**
-- Use `where` filters for targeted queries (e.g., `where: { operator: $address }`)
-- Cursor-based pagination via `limit`, `after`, `before` (NOT offset-based `skip`)
-- Standard query arguments: `where`, `orderBy`, `orderDirection`, `before`, `after`, `limit`
-- Nested relationship queries (e.g., `battle { players { character } }`)
-- String matching with `_starts_with`, `_not`, `_gt`, etc.
-- All list queries return results wrapped in `{ items: [...] }` structure
-
-**Pagination:**
-- The indexer uses cursor-based pagination, not offset-based
-- Use `after` parameter with the last item's ID from previous page
-- Use `limit` to control page size (default varies by entity type)
-- The `queryAllPages` utility function handles pagination automatically
+- All list queries return: `{ items: [...], pageInfo: {...}, totalCount: N }`
+- Pagination: Use `limit`, `after`, `before` (cursor-based, not offset)
+- Filtering: Use `where` with exact matches or operators (`_gt`, `_starts_with`, etc.)
+- Relationships are navigable (e.g., `party { members { character { name } } }`)
 
 ### Common Issues
 

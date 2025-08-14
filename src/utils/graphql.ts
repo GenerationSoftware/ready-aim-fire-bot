@@ -142,7 +142,7 @@ export interface Party {
   leader: string;
   isPublic: boolean;
   inviter: string;
-  roomHash: string;
+  roomId: string; // Room ID as string from GraphQL
   state: PartyState;
   createdAt: string;
   startedAt: string | null;
@@ -213,7 +213,7 @@ export const GraphQLQueries = {
           leader
           isPublic
           inviter
-          roomHash
+          roomId
           state
           createdAt
           startedAt
@@ -248,7 +248,7 @@ export const GraphQLQueries = {
           leader
           isPublic
           inviter
-          roomHash
+          roomId
           state
           createdAt
           startedAt

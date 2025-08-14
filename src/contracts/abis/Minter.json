@@ -8,25 +8,12 @@
         "internalType": "address"
       },
       {
-        "name": "_basicDeck",
+        "name": "_standardDeck",
         "type": "address",
         "internalType": "contract StandardDeck"
       }
     ],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "basicDeck",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "contract StandardDeck"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -65,6 +52,19 @@
       }
     ],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "standardDeck",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract StandardDeck"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
