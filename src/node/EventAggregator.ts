@@ -41,30 +41,18 @@ export class EventAggregator {
     this.logger = createLogger({ operator: 'EventAggregator' });
   }
 
-  private log(...args: any[]) {
-    if (args.length === 1) {
-      this.logger.info(args[0]);
-    } else {
-      this.logger.info(args[0], ...args.slice(1));
-    }
-  }
 
-  private error(...args: any[]) {
-    if (args.length === 1) {
-      this.logger.error(args[0]);
-    } else {
-      this.logger.error(args[0], ...args.slice(1));
-    }
-  }
+
+
 
   async start() {
     if (this.isRunning) {
-      this.log("Already running");
+      this.logger.info("Already running");
       return;
     }
 
     this.isRunning = true;
-    this.log("Starting...");
+    this.logger.info("Starting...");
 
     // Don't setup WebSocket connection immediately - wait for subscriptions
     // Start health checks every 30 seconds
@@ -75,11 +63,11 @@ export class EventAggregator {
 
   async stop() {
     if (!this.isRunning) {
-      this.log("Not running");
+      this.logger.info("Not running");
       return;
     }
 
-    this.log("Stopping...");
+    this.logger.info("Stopping...");
     this.isRunning = false;
 
     // Clear health check interval
@@ -92,8 +80,8 @@ export class EventAggregator {
     for (const unwatch of this.unwatchFunctions.values()) {
       try {
         unwatch();
-      } catch (error) {
-        this.error("Error unwatching event:", error);
+      } catch (error: any) {
+        this.logger.error({ error: error?.message || error, stack: error?.stack }, "Error unwatching event:");
       }
     }
     this.unwatchFunctions.clear();
@@ -112,7 +100,7 @@ export class EventAggregator {
   subscribe(subscription: EventSubscription): () => void {
     const subscriptionId = `${subscription.eventName}-${subscription.address || 'global'}-${Date.now()}`;
     
-    this.log(`Subscribing to ${subscription.eventName} on ${subscription.address || 'all addresses'}`);
+    this.logger.info(`Subscribing to ${subscription.eventName} on ${subscription.address || 'all addresses'}`);
 
     // Store registration
     this.registrations.set(subscriptionId, {
@@ -122,9 +110,9 @@ export class EventAggregator {
 
     // Setup WebSocket connection if this is the first subscription
     if (!this.wsClient && this.registrations.size === 1) {
-      this.log("First subscription, setting up WebSocket connection");
+      this.logger.info("First subscription, setting up WebSocket connection");
       this.setupWebSocketConnection().catch(error => {
-        this.error("Failed to setup WebSocket connection:", error);
+        this.logger.error({ error: error?.message || error, stack: error?.stack }, "Failed to setup WebSocket connection:");
       });
     } else if (this.wsClient) {
       // If WebSocket is already connected, setup the subscription immediately
@@ -136,7 +124,7 @@ export class EventAggregator {
 
     // Return unsubscribe function
     return () => {
-      this.log(`Unsubscribing from ${subscriptionId}`);
+      this.logger.info(`Unsubscribing from ${subscriptionId}`);
       this.registrations.delete(subscriptionId);
       
       const unwatch = this.unwatchFunctions.get(subscriptionId);
@@ -147,13 +135,13 @@ export class EventAggregator {
 
       // If no more subscriptions, close WebSocket
       if (this.registrations.size === 0 && this.wsClient) {
-        this.log("No more subscriptions, closing WebSocket connection");
+        this.logger.info("No more subscriptions, closing WebSocket connection");
         this.wsClient = null;
         for (const unwatch of this.unwatchFunctions.values()) {
           try {
             unwatch();
-          } catch (error) {
-            this.error("Error unwatching event:", error);
+          } catch (error: any) {
+            this.logger.error({ error: error?.message || error, stack: error?.stack }, "Error unwatching event:");
           }
         }
         this.unwatchFunctions.clear();
@@ -163,12 +151,12 @@ export class EventAggregator {
 
   private async setupWebSocketConnection() {
     if (this.wsClient) {
-      this.log("WebSocket connection already exists");
+      this.logger.info("WebSocket connection already exists");
       return;
     }
 
     try {
-      this.log("Setting up WebSocket connection");
+      this.logger.info("Setting up WebSocket connection");
       
       const transport = createAuthenticatedWebSocketTransport(this.config.ethWsRpcUrl, { ETH_RPC_URL: this.config.ethRpcUrl }, {
         keepAlive: true,
@@ -178,15 +166,15 @@ export class EventAggregator {
           maxAttempts: 5,
         },
         onConnect: () => {
-          this.log("WebSocket connected!");
+          this.logger.info("WebSocket connected!");
         },
         onDisconnect: () => {
-          this.log("WebSocket disconnected!");
+          this.logger.info("WebSocket disconnected!");
         },
         onError: (error: any) => {
           // Only log non-ErrorEvent errors (ErrorEvent is just a connection error)
           if (error && error.constructor.name !== 'ErrorEvent') {
-            this.error("WebSocket error:", error);
+            this.logger.error({ error: error?.message || error, stack: error?.stack }, "WebSocket error:");
           }
           this.handleWebSocketError();
         }
@@ -200,18 +188,18 @@ export class EventAggregator {
       // Test the connection
       try {
         const blockNumber = await this.wsClient.getBlockNumber();
-        this.log("WebSocket test - current block:", blockNumber);
-      } catch (error) {
-        this.error("WebSocket test failed:", error);
+        this.logger.info({ blockNumber }, "WebSocket test - current block:");
+      } catch (error: any) {
+        this.logger.error({ error: error?.message || error, stack: error?.stack }, "WebSocket test failed:");
         // Don't throw here, let the health check handle reconnection
       }
 
       // Subscribe to all registered events
       await this.subscribeToAllEvents();
       
-      this.log("WebSocket connection established");
-    } catch (error) {
-      this.error("Error setting up WebSocket:", error);
+      this.logger.info("WebSocket connection established");
+    } catch (error: any) {
+      this.logger.error({ error: error?.message || error, stack: error?.stack }, "Error setting up WebSocket:");
       throw error;
     }
   }
@@ -237,35 +225,35 @@ export class EventAggregator {
       );
       
       if (!eventDef) {
-        this.error(`Event ${registration.eventName} not found in ABI`);
+        this.logger.error(`Event ${registration.eventName} not found in ABI`);
         return;
       }
 
-      this.log(`Setting up watchEvent for ${registration.eventName}:`, {
+      this.logger.info({
         address: registration.address,
         hasAddress: !!registration.address
-      });
+      }, `Setting up watchEvent for ${registration.eventName}:`);
 
       const unwatch = this.wsClient.watchEvent({
         event: eventDef,
         address: registration.address as `0x${string}` | undefined,
         onLogs: (logs: any[]) => {
-          this.log(`Received ${logs.length} logs for ${registration.eventName}`);
+          this.logger.info(`Received ${logs.length} logs for ${registration.eventName}`);
           registration.onEvent(logs);
         },
         onError: (error: any) => {
-          this.error(`Error watching ${registration.eventName}:`, error);
+          this.logger.error({ error: error?.message || error, stack: error?.stack }, `Error watching ${registration.eventName}:`);
           // If WebSocket error, trigger reconnection
           if (error.name === 'SocketClosedError' || error.name === 'WebSocketRequestError') {
-            this.error(`WebSocket error detected for ${registration.eventName}, triggering reconnection`);
+            this.logger.error(`WebSocket error detected for ${registration.eventName}, triggering reconnection`);
             this.handleWebSocketError();
           }
         }
       } as any);
       
       this.unwatchFunctions.set(subscriptionId, unwatch);
-    } catch (error) {
-      this.error(`Error setting up subscription ${subscriptionId}:`, error);
+    } catch (error: any) {
+      this.logger.error({ error: error?.message || error, stack: error?.stack }, `Error setting up subscription ${subscriptionId}:`);
     }
   }
 
@@ -275,16 +263,16 @@ export class EventAggregator {
       return;
     }
 
-    this.log("Performing health check");
+    this.logger.info("Performing health check");
     
     try {
       const isHealthy = await this.checkWebSocketHealth();
       
       if (!isHealthy) {
-        this.log("WebSocket connection unhealthy, attempting to restore");
+        this.logger.info("WebSocket connection unhealthy, attempting to restore");
         await this.restoreWebSocketConnection();
       } else {
-        this.log("WebSocket connection healthy");
+        this.logger.info("WebSocket connection healthy");
       }
 
       this.lastHealthCheck = Date.now();
@@ -293,14 +281,14 @@ export class EventAggregator {
       if (isHealthy) {
         this.websocketErrors = 0;
       }
-    } catch (error) {
-      this.error("Error in health check:", error);
+    } catch (error: any) {
+      this.logger.error({ error: error?.message || error, stack: error?.stack }, "Error in health check:");
     }
   }
 
   private async checkWebSocketHealth(): Promise<boolean> {
     if (!this.wsClient) {
-      this.log("No WebSocket client exists");
+      this.logger.info("No WebSocket client exists");
       return false;
     }
 
@@ -313,17 +301,17 @@ export class EventAggregator {
         )
       ]);
       
-      this.log("WebSocket health check successful, block:", blockNumber);
+      this.logger.info({ blockNumber }, "WebSocket health check successful, block:");
       return true;
-    } catch (error) {
-      this.error("WebSocket health check failed:", error);
+    } catch (error: any) {
+      this.logger.error({ error: error?.message || error, stack: error?.stack }, "WebSocket health check failed:");
       return false;
     }
   }
 
   private async restoreWebSocketConnection() {
     try {
-      this.log("Attempting to restore WebSocket connection");
+      this.logger.info("Attempting to restore WebSocket connection");
       
       // Clean up existing connection
       if (this.wsClient) {
@@ -331,8 +319,8 @@ export class EventAggregator {
         for (const unwatch of this.unwatchFunctions.values()) {
           try {
             unwatch();
-          } catch (error) {
-            this.error("Error unwatching event:", error);
+          } catch (error: any) {
+            this.logger.error({ error: error?.message || error, stack: error?.stack }, "Error unwatching event:");
           }
         }
         this.unwatchFunctions.clear();
@@ -342,9 +330,9 @@ export class EventAggregator {
       // Re-establish connection
       await this.setupWebSocketConnection();
       
-      this.log("WebSocket connection restored successfully");
-    } catch (error) {
-      this.error("Failed to restore WebSocket connection:", error);
+      this.logger.info("WebSocket connection restored successfully");
+    } catch (error: any) {
+      this.logger.error({ error: error?.message || error, stack: error?.stack }, "Failed to restore WebSocket connection:");
     }
   }
 
@@ -353,13 +341,13 @@ export class EventAggregator {
     
     // Avoid multiple simultaneous reconnection attempts
     if (this.isReconnecting) {
-      this.log("Already attempting to reconnect, skipping");
+      this.logger.info("Already attempting to reconnect, skipping");
       return;
     }
 
     // If we've had multiple errors in a short time, trigger immediate reconnection
     if (this.websocketErrors >= 3) {
-      this.log(`Multiple WebSocket errors (${this.websocketErrors}), triggering immediate reconnection`);
+      this.logger.info(`Multiple WebSocket errors (${this.websocketErrors}), triggering immediate reconnection`);
       this.isReconnecting = true;
       this.websocketErrors = 0;
       

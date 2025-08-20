@@ -17,7 +17,7 @@ This is a Cloudflare Workers-based gaming bot system for the "Battle" blockchain
 
 **OperatorManager** (`src/OperatorManager.ts`) - The main orchestrator that:
 - Discovers battles, characters, and parties using GraphQL indexer data exclusively
-- Manages bot wallet minting via the Minter contract
+- Manages bot wallet operations
 - Spawns CharacterOperator, BattleOperator, and ZigguratOperator instances for active games
 - Runs on a 5-second alarm cycle using only GraphQL queries
 - Uses GraphQL queries to efficiently find operator involvement in games
@@ -28,6 +28,9 @@ This is a Cloudflare Workers-based gaming bot system for the "Battle" blockchain
 - Uses energy-based action system with random card selection
 - Self-destructs after 10 minutes of inactivity or when game ends
 - Falls back to event scanning if GraphQL is unavailable
+- Smart hand management: Checks `lastTurnHandDrawn` field from GraphQL to determine if a new hand needs to be drawn
+  - If `lastTurnHandDrawn` !== `currentTurn`: Calls `PlayerDeckManager.computeDiscardAndDrawHand()` with turn random seed
+  - If `lastTurnHandDrawn` === `currentTurn`: Uses existing hand via `PlayerDeckManager.getPileState()`
 
 **BattleOperator** (`src/BattleOperator.ts`) - Turn advancement manager that:
 - Uses GraphQL to check battle state and turn history
@@ -86,7 +89,6 @@ The system interacts with several smart contracts:
 - **BattleFactory** - Game creation factory
 - **Act** - Dungeon exploration contract
 - **StandardDeck** - Card collection contract  
-- **Minter** - Handles card minting for new players
 - **Season** - Manages series of Acts with current and historical tracking
 - **RoomRewards** - Handles rewards for dungeon room completion
 - **ERC2771Forwarder** - Meta-transaction relayer
@@ -137,38 +139,54 @@ The GraphQL indexer at `GRAPHQL_URL` provides the following main entity types:
 **Core Entities:**
 
 **Season & Act Management:**
-- `season` - Season container (address, name, currentActIndex, owner, operator)
-- `seasonAct` - Links seasons to acts (seasonAddress, actIndex, actAddress)
-- `act` - Dungeon instance (address, rootRoomId, battleFactory, maxDepth, turnDuration, isClosed)
+- `season` - Season container (address, name, currentActIndex, owner, operator, trustedForwarder, createdAt)
+- `seasonAct` - Links seasons to acts (id, seasonAddress, actIndex, actAddress, createdAt)
+- `act` - Dungeon instance (address, startingRoomId, battleFactory, deckConfiguration, monsterRegistry, playerDeckManager, maxDepth, turnDuration, isClosed, owner, operator, trustedForwarder, rngSeed, createdAt)
+  - Note: `rootRoomId` has been renamed to `startingRoomId`
 
 **Party System:**
-- `party` - Player group (id, actAddress, partyId, leader, roomId, battleAddress, state)
+- `party` - Player group (id, actAddress, partyId, leader, roomId, state, isPublic, inviter, createdTxHash, createdAt, startedAt, endedAt)
   - States: CREATED(0), ROOM_CHOSEN(1), IN_ROOM(2), ESCAPED(3), CANCELLED(4)
-- `partyMember` - Character in party (partyId, characterId, joinedAt)
+  - Note: `battleAddress` removed, now uses `roomBattles` relationship
+- `partyMember` - Character in party (id, partyId, characterId, joinedAt)
+- `partyRoomBattle` - Links parties to battles in specific rooms (id, partyId, battleAddress, roomId, createdAt)
 
 **Room System:**
-- `actRoom` - Dungeon room (id, actAddress, roomId, roomType, monsterIndex1/2/3, battle)
-- `actRoomConnection` - Room connections (fromRoomId, toRoomId, slotIndex)
+- `actRoom` - Dungeon room (id, actAddress, roomId, roomType, roomData, revealedAt)
+- `battleRoomData` - Battle room details (id, actAddress, partyId, roomId, monsterIndex1, battleAddress, createdAt, startedAt)
+- `actRoomConnection` - Room connections (id, actAddress, fromRoomId, toRoomId, slotIndex)
 
 **Character & Monster:**
-- `character` - Player character (id, owner, operator, name, cards, battlePlayers)
-- `monster` - Monster character (characterAddress, health, registeredAt)
-- `characterCard` - Character's cards (characterAddress, cardId, deck, tokenId, isActive)
+- `character` - Player character (id, owner, operator, name, createdAt)
+- `monster` - Monster character (id, characterAddress, index, health, registeredAt)
+- `monsterCard` - Monster's cards (id, characterAddress, cardIndex, deck, actionTypes, registeredAt)
+- `characterCard` - Character's cards (id, characterAddress, cardId, deck, tokenId, activatedAt, deactivatedAt, isActive)
 
 **Battle System:**
-- `battle` - Battle instance (id, operator, currentTurn, teamAEliminated, teamBEliminated, winner, gameStartedAt, gameEndedAt)
-- `battlePlayer` - Player in battle (battleAddress, playerId, character, locationX/Y, teamA, eliminated)
-- `playerAction` - Battle actions (battleAddress, playerId, turn, cardIndex, cardActionParams)
+- `battle` - Battle instance (id, owner, operator, joinDeadlineAt, turnDuration, turnTimerEnabled, deckConfiguration, playerStatsStorage, enforceAdjacency, currentTurn, teamAStarts, teamACount, teamBCount, teamAEliminated, teamBEliminated, winner, gameStartedAt, gameEndedAt, createdAt, currentTurnStartedAt, currentTurnDuration, currentTurnEndTurnCount, currentTurnRandomNumber)
+- `battlePlayer` - Player in battle (id, battleAddress, playerId, character, deckId, locationX, locationY, teamA, joinedAt, eliminated, eliminatedAt, lastEndedTurn, statsLastUpdatedTurn, statsData, lastTurnHandDrawn)
+  - Note: `lastTurnHandDrawn` tracks the turn number when the player's hand was last drawn - used to determine if `discardAndDrawHand` is needed
+- `playerAction` - Battle actions (id, battleAddress, playerId, turn, cardIndex, cardActionParams, actionedAt)
 
-**Card & Action System:**
-- `standardDeckCard` - Card ownership (deckAddress, tokenId, owner, actionType)
-- `actionDefinition` - Action definitions (deckLogicAddress, actionType, energy)
-- `actionEffect` - Action effects (actionDefinitionId, effectType, amount)
+**Deck & Card System:**
+- `playerDeck` - Player deck (id, playerDeckManagerAddress, deckId, owner, createdAt, destroyedAt, isActive)
+- `playerDeckCard` - Cards in player deck (id, playerDeckId, deckAddress, cardIndex, actionType, location, addedAt, updatedAt)
+- `standardDeckCard` - Card ownership (id, deckAddress, tokenId, owner, actionType, mintedAt, transferredAt)
+
+**Stats & Configuration:**
+- `playerStatsStorage` - Player stats storage (id, trustedForwarder, storageAddress, owner, createdAt)
+- `deckConfiguration` - Deck configurations (id, name, senderOwner, operator, trustedForwarder, standardDeckLogic, playerDeckManager, createdAt)
+
+**Action System:**
+- `actionDefinition` - Action definitions (id, deckLogicAddress, actionType, energy, createdAt)
+- `actionEffect` - Action effects (id, actionDefinitionId, effectType, amount, createdAt)
 
 **Query Patterns:**
+- All list queries follow the naming pattern: singular for single item (e.g., `party`), plural with 's' for lists (e.g., `partys`)
 - All list queries return: `{ items: [...], pageInfo: {...}, totalCount: N }`
 - Pagination: Use `limit`, `after`, `before` (cursor-based, not offset)
 - Filtering: Use `where` with exact matches or operators (`_gt`, `_starts_with`, etc.)
+- Ordering: Use `orderBy` and `orderDirection` parameters
 - Relationships are navigable (e.g., `party { members { character { name } } }`)
 
 ### Common Issues

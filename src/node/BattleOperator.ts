@@ -34,30 +34,15 @@ export class BattleOperator {
     this.logger = createLogger({ operator: 'BattleOperator', battleAddress: config.gameAddress });
   }
 
-  private log(...args: any[]) {
-    if (args.length === 1) {
-      this.logger.info(args[0]);
-    } else {
-      this.logger.info(args[0], ...args.slice(1));
-    }
-  }
-
-  private error(...args: any[]) {
-    if (args.length === 1) {
-      this.logger.error(args[0]);
-    } else {
-      this.logger.error(args[0], ...args.slice(1));
-    }
-  }
 
   start() {
     if (this.isRunning) {
-      this.log("Already running");
+      this.logger.info("Already running");
       return;
     }
 
     this.isRunning = true;
-    this.log("Starting...");
+    this.logger.info("Starting...");
 
     // Subscribe to EndedTurnEvent
     this.eventUnsubscribe = this.config.eventAggregator.subscribe({
@@ -65,15 +50,15 @@ export class BattleOperator {
       abi: BattleABI as any[],
       address: this.config.gameAddress,
       onEvent: async (logs: any[]) => {
-        this.log(`EndedTurnEvent triggered with ${logs.length} logs`);
+        this.logger.info(`EndedTurnEvent triggered with ${logs.length} logs`);
         for (const log of logs) {
-          this.log("EndedTurnEvent details:", {
+          this.logger.info({
             address: log.address,
             turn: log.args?.turn?.toString(),
             player: log.args?.player,
             transactionHash: log.transactionHash,
             blockNumber: log.blockNumber
-          });
+          }, "EndedTurnEvent details");
         }
         // Trigger turn advancement check
         this.checkAndAdvanceTurn();
@@ -91,11 +76,11 @@ export class BattleOperator {
 
   stop() {
     if (!this.isRunning) {
-      this.log("Not running");
+      this.logger.info("Not running");
       return;
     }
 
-    this.log("Stopping...");
+    this.logger.info("Stopping...");
     this.isRunning = false;
 
     if (this.intervalId) {
@@ -140,7 +125,7 @@ export class BattleOperator {
       const battle = battleResult.battle;
       
       if (!battle) {
-        this.log("Battle not found in GraphQL, checking contract state");
+        this.logger.info("Battle not found in GraphQL, checking contract state");
         // Fallback to contract check
         const gameState = await publicClient.readContract({
           address: this.config.gameAddress as `0x${string}`,
@@ -149,15 +134,15 @@ export class BattleOperator {
         }) as bigint;
         
         if (gameState > 2n) {
-          this.log("Game has ended, stopping operator");
+          this.logger.info("Game has ended, stopping operator");
           this.stop();
           return;
         } else if (gameState == 1n) {
-          this.log("Game has not started, delaying");
+          this.logger.info("Game has not started, delaying");
           return;
         }
       } else if (!battle.gameStartedAt) {
-        this.log("Game has not started according to GraphQL, delaying");
+        this.logger.info("Game has not started according to GraphQL, delaying");
         return;
       }
 
@@ -173,46 +158,82 @@ export class BattleOperator {
             address: this.config.gameAddress as `0x${string}`,
             abi: BattleABI as Abi,
             functionName: 'getGameState'
+          },
+          {
+            address: this.config.gameAddress as `0x${string}`,
+            abi: BattleABI as Abi,
+            functionName: 'winner'
           }
         ]
       });
 
-      if (multicallResults[0].status === 'failure' || multicallResults[1].status === 'failure') {
-        this.error("Multicall failed:", {
-          isTurnOver: multicallResults[0].status === 'failure' ? multicallResults[0].error : 'success',
-          gameState: multicallResults[1].status === 'failure' ? multicallResults[1].error : 'success'
-        });
+      if (multicallResults[0].status === 'failure' || multicallResults[1].status === 'failure' || multicallResults[2].status === 'failure') {
+        this.logger.error({
+          isTurnOver: multicallResults[0].status === 'failure' ? multicallResults[0].error?.message || multicallResults[0].error : multicallResults[0].result,
+          gameState: multicallResults[1].status === 'failure' ? multicallResults[1].error?.message || multicallResults[1].error : multicallResults[1].result?.toString(),
+          winner: multicallResults[2].status === 'failure' ? multicallResults[2].error?.message || multicallResults[2].error : multicallResults[2].result?.toString()
+        }, "Multicall failed");
+        
+        // If game state check succeeded but shows ended, stop the operator
+        if (multicallResults[1].status === 'success') {
+          const gameState = multicallResults[1].result as bigint;
+          if (gameState > 2n) {
+            this.logger.info({ gameState: gameState.toString() }, "Game has ended despite multicall partial failure, stopping operator");
+            this.stop();
+            return;
+          }
+        }
+        
+        // Also check winner field
+        if (multicallResults[2].status === 'success') {
+          const winner = multicallResults[2].result as bigint;
+          if (winner !== 0n) {
+            this.logger.info({ winner: winner.toString() }, "Game has a winner, stopping operator");
+            this.stop();
+            return;
+          }
+        }
+        
         return;
       }
 
       const isTurnOver = multicallResults[0].result as boolean;
       const gameState = multicallResults[1].result as bigint;
+      const winner = multicallResults[2].result as bigint;
 
-      this.log("Multicall results:", {
+      this.logger.info({
         isTurnOver,
-        gameState
-      });
+        gameState: gameState.toString(),
+        winner: winner.toString()
+      }, "Multicall results");
+
+      // Check if there's a winner (game has ended)
+      if (winner !== 0n) {
+        this.logger.info({ winner: winner.toString() }, "Game has a winner, stopping operator");
+        this.stop();
+        return;
+      }
 
       // Only proceed if game is still active (state <= 2)
       if (gameState > 2n) {
-        this.log("Game has ended, stopping operator");
+        this.logger.info({ gameState: gameState.toString() }, "Game has ended (state > 2), stopping operator");
         this.stop();
         return;
       }
 
       if (gameState == 1n) {
-        this.log("Game has not started, delaying");
+        this.logger.info("Game has not started (state == 1), delaying");
         return;
       }
 
-      this.log("Game state:", gameState, "Turn over:", isTurnOver);
+      this.logger.info({ gameState: gameState.toString(), isTurnOver, winner: winner.toString() }, "Game state");
 
       if (gameState == 2n && isTurnOver) {
-        this.log("Turn has ended, advancing to next turn");
+        this.logger.info("Turn has ended, advancing to next turn");
         
         // Create wallet client for sending transactions
         const account = privateKeyToAccount(this.config.operatorPrivateKey as `0x${string}`);
-        this.log("Using operator address:", account.address);
+        this.logger.info({ address: account.address }, "Using operator address");
         
         const walletClient = createWalletClient({
           account,
@@ -230,9 +251,9 @@ export class BattleOperator {
           args: [randomNumber]
         });
 
-        this.log("Calling nextTurn for game", this.config.gameAddress);
-        this.log("Using forwarder address:", this.config.erc2771ForwarderAddress);
-        this.log("Using relayer URL:", this.config.relayerUrl);
+        this.logger.info({ gameAddress: this.config.gameAddress }, "Calling nextTurn for game");
+        this.logger.info({ forwarderAddress: this.config.erc2771ForwarderAddress }, "Using forwarder address");
+        this.logger.info({ relayerUrl: this.config.relayerUrl }, "Using relayer URL");
 
         // Forward the transaction
         let hash;
@@ -248,35 +269,35 @@ export class BattleOperator {
             walletClient,
             this.config.erc2771ForwarderAddress as `0x${string}`
           );
-        } catch (error) {
+        } catch (error: any) {
           console.error(error);
           console.error("I SHOUDL BE ABLE TO SEE THIS");
-          this.error("Error forwarding transaction:", error);
+          this.logger.error({ error: error?.message || error, stack: error?.stack }, "Error forwarding transaction");
           return;
         }
 
-        this.log("Next turn transaction forwarded:", hash);
+        this.logger.info({ hash }, "Next turn transaction forwarded");
 
         // Wait for transaction receipt only if we have a valid hash
         if (hash) {
           try {
             const receipt = await publicClient.waitForTransactionReceipt({ hash });
-            this.log("Next turn transaction confirmed:", receipt);
-          } catch (error) {
-            this.error("Error waiting for transaction receipt:", error);
+            this.logger.info({ receipt }, "Next turn transaction confirmed");
+          } catch (error: any) {
+            this.logger.error({ error: error?.message || error, stack: error?.stack }, "Error waiting for transaction receipt");
             return;
           }
         } else {
-          this.error("No transaction hash received from forwardTransaction for game", this.config.gameAddress);
+          this.logger.error({ gameAddress: this.config.gameAddress }, "No transaction hash received from forwardTransaction for game");
           return;
         }
 
-        this.log("Turn successfully advanced");
+        this.logger.info("Turn successfully advanced");
       } else {
-        this.log("Turn has not ended yet");
+        this.logger.info("Turn has not ended yet");
       }
-    } catch (error) {
-      this.error("Error in checkAndAdvanceTurn:", error);
+    } catch (error: any) {
+      this.logger.error({ error: error?.message || error, stack: error?.stack }, "Error in checkAndAdvanceTurn");
     }
   }
 }

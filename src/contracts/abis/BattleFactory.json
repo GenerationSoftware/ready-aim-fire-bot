@@ -6,6 +6,11 @@
         "name": "_implementation",
         "type": "address",
         "internalType": "contract Battle"
+      },
+      {
+        "name": "_playerStatsStorage",
+        "type": "address",
+        "internalType": "contract PlayerStatsStorage"
       }
     ],
     "stateMutability": "nonpayable"
@@ -81,6 +86,19 @@
       }
     ],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "playerStatsStorage",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract PlayerStatsStorage"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "event",

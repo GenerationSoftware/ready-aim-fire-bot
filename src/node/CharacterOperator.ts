@@ -2,6 +2,7 @@ import { createPublicClient, createWalletClient, encodeFunctionData, type Abi } 
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
 import BattleABI from "../contracts/abis/Battle.json";
+import PlayerDeckManagerABI from "../contracts/abis/PlayerDeckManager.json";
 import { forwardTransaction } from "../forwarder/forwardTransaction";
 import { createGraphQLClient, GraphQLQueries, type BattlePlayer } from "../utils/graphql";
 import { getPlayerEnergy } from "../utils/playerStats";
@@ -44,22 +45,15 @@ export class CharacterOperator {
     });
   }
 
-  private log(message: string, ...args: any[]) {
-    this.logger.info({ ...args[0] }, message);
-  }
-
-  private error(message: string, ...args: any[]) {
-    this.logger.error({ ...args[0] }, message);
-  }
 
   start() {
     if (this.isRunning) {
-      this.log("Already running");
+      this.logger.info("Already running");
       return;
     }
 
     this.isRunning = true;
-    this.log("Starting...");
+    this.logger.info("Starting...");
 
     // Subscribe to NextTurnEvent
     this.eventUnsubscribe = this.config.eventAggregator.subscribe({
@@ -67,14 +61,14 @@ export class CharacterOperator {
       abi: BattleABI as any[],
       address: this.config.gameAddress,
       onEvent: async (logs: any[]) => {
-        this.log(`NextTurnEvent triggered with ${logs.length} logs`);
+        this.logger.info(`NextTurnEvent triggered with ${logs.length} logs`);
         for (const log of logs) {
-          this.log("NextTurnEvent details:", {
+          this.logger.info({
             address: log.address,
             turn: log.args?.turn?.toString(),
             team: log.args?.teamATurn ? "A" : "B",
             isOurTurn: log.args?.teamATurn === this.config.teamA
-          });
+          }, "NextTurnEvent details");
         }
         // Trigger turn check immediately when it's our turn
         this.performPeriodicCheck();
@@ -92,11 +86,11 @@ export class CharacterOperator {
 
   stop() {
     if (!this.isRunning) {
-      this.log("Not running");
+      this.logger.info("Not running");
       return;
     }
 
-    this.log("Stopping...");
+    this.logger.info("Stopping...");
     this.isRunning = false;
 
     // Unsubscribe from events
@@ -132,29 +126,29 @@ export class CharacterOperator {
     try {
       const shouldContinue = await this.executeBotLogic();
       if (!shouldContinue) {
-        this.log("Bot logic indicated to stop");
+        this.logger.info("Bot logic indicated to stop");
         this.stop();
       }
-    } catch (error) {
-      this.error("Error in periodic check:", error);
+    } catch (error: any) {
+      this.logger.error({ error: error?.message || error, stack: error?.stack }, "Error in periodic check");
     }
   }
 
   private async executeBotLogic(): Promise<boolean> {
     // Prevent concurrent execution
     if (this.isExecuting) {
-      this.log('Already executing bot logic, skipping...');
+      this.logger.info('Already executing bot logic, skipping...');
       return true;
     }
     
     this.isExecuting = true;
     
     try {
-      this.log('executeBotLogic', {
+      this.logger.info({
         gameAddress: this.config.gameAddress,
         playerId: this.config.playerId,
         teamA: this.config.teamA
-      });
+      }, 'executeBotLogic');
 
       const publicClient = createPublicClient({
         chain: arbitrum,
@@ -169,17 +163,17 @@ export class CharacterOperator {
       const battle = battleResult.battles.items.find(b => b.id.toLowerCase() === this.config.gameAddress.toLowerCase());
       
       if (!battle) {
-        this.log("Battle not found for game address " + this.config.gameAddress);
+        this.logger.info("Battle not found for game address " + this.config.gameAddress);
         return false;
       }
 
       if (battle.winner != null) {
-        this.log("Battle already finished with winner " + battle.winner + " for game address " + this.config.gameAddress);
+        this.logger.info("Battle already finished with winner " + battle.winner + " for game address " + this.config.gameAddress);
         return false;
       }
 
       if (!battle.gameStartedAt) {
-        this.log("Battle has not started yet " + battle.id);
+        this.logger.info("Battle has not started yet " + battle.id);
         return true;
       }
 
@@ -190,18 +184,18 @@ export class CharacterOperator {
         functionName: 'isTeamATurn'
       }) as boolean;
 
-      this.log(`Turn check: isTeamATurn=${isTeamATurn}, botTeamA=${this.config.teamA}, match=${isTeamATurn === this.config.teamA}`);
+      this.logger.info(`Turn check: isTeamATurn=${isTeamATurn}, botTeamA=${this.config.teamA}, match=${isTeamATurn === this.config.teamA}`);
       
       if (isTeamATurn === this.config.teamA) {
-        this.log("It's our turn to play!");
+        this.logger.info("It's our turn to play!");
         await this.playTurn(publicClient);
       } else {
-        this.log("Not time to play yet");
+        this.logger.info("Not time to play yet");
       }
 
       return true;
-    } catch (error) {
-      this.error("Error in executeBotLogic:", error);
+    } catch (error: any) {
+      this.logger.error({ error: error?.message || error, stack: error?.stack }, `Error in executeBotLogic: ${error?.message || error}`);
       return true;
     }
     } finally {
@@ -213,6 +207,14 @@ export class CharacterOperator {
     const playerId = BigInt(this.config.playerId);
     const gameAddress = this.config.gameAddress as `0x${string}`;
 
+    // Create wallet client for transactions
+    const account = privateKeyToAccount(this.config.operatorPrivateKey as `0x${string}`);
+    const walletClient = createWalletClient({
+      account,
+      chain: arbitrum,
+      transport: createAuthenticatedHttpTransport(this.config.ethRpcUrl, { ETH_RPC_URL: this.config.ethRpcUrl })
+    });
+
     // First check if the game is still active
     const winner = await publicClient.readContract({
       address: gameAddress,
@@ -221,7 +223,7 @@ export class CharacterOperator {
     }) as any;
 
     if (winner !== 0n) {
-      this.log('Game has ended with winner:', winner);
+      this.logger.info({ winner: winner.toString() }, 'Game has ended with winner');
       return;
     }
 
@@ -232,7 +234,109 @@ export class CharacterOperator {
       functionName: 'currentTurn'
     }) as bigint;
 
-    // Get current energy
+    // Get the PlayerDeckManager address from the Battle contract first
+    const playerDeckManagerAddress = await publicClient.readContract({
+      address: gameAddress,
+      abi: BattleABI as Abi,
+      functionName: 'playerDeckManager'
+    }) as `0x${string}`;
+
+    // Get the player's deckId from the Battle contract
+    let deckId = await publicClient.readContract({
+      address: gameAddress,
+      abi: BattleABI as Abi,
+      functionName: 'playerDeckIds',
+      args: [playerId]
+    }) as bigint;
+
+    this.logger.info(`Player ${playerId} has deckId: ${deckId}`);
+
+    // If deckId is 0, the deck hasn't been created yet - skip this turn
+    if (deckId === 0n) {
+      this.logger.info(`Deck not yet created for player ${playerId}, cannot play turn`);
+      return;
+    }
+
+    // Get lastTurnHandDrawn from GraphQL to check if we need to draw a new hand
+    let lastTurnHandDrawn: bigint | undefined;
+    try {
+      const graphqlClient = createGraphQLClient({ GRAPHQL_URL: this.config.graphqlUrl });
+      const battlePlayersResult = await graphqlClient.query<{ battlePlayers: { items: BattlePlayer[] } }>(GraphQLQueries.getBattlePlayers, {
+        battleId: gameAddress.toLowerCase()
+      });
+      
+      const thisPlayer = battlePlayersResult.battlePlayers.items.find(
+        p => p.playerId === playerId.toString()
+      );
+      
+      if (thisPlayer?.lastTurnHandDrawn) {
+        lastTurnHandDrawn = BigInt(thisPlayer.lastTurnHandDrawn);
+        this.logger.info(`Player's lastTurnHandDrawn: ${lastTurnHandDrawn}, currentTurn: ${currentTurn}`);
+      }
+    } catch (error: any) {
+      this.logger.warn({ error: error.message }, 'Could not get lastTurnHandDrawn from GraphQL');
+    }
+
+    // Determine if we need to draw a new hand or just get the current state
+    let pileState: { drawPile: `0x${string}`, hand: `0x${string}`, discardPile: `0x${string}` };
+    
+    if (lastTurnHandDrawn === undefined || lastTurnHandDrawn !== currentTurn) {
+      // Hand needs to be drawn for this turn - use computeDiscardAndDrawHand
+      this.logger.info(`Computing new hand for turn ${currentTurn} (lastTurnHandDrawn: ${lastTurnHandDrawn}`);
+      
+      // Get the random number for this turn from the contract
+      const randomSeed = await publicClient.readContract({
+        address: gameAddress,
+        abi: BattleABI as Abi,
+        functionName: 'getCurrentTurnRandomNumber'
+      }) as bigint;
+      
+      const handSize = 5n; // Standard hand size
+      
+      pileState = await publicClient.readContract({
+        address: playerDeckManagerAddress,
+        abi: PlayerDeckManagerABI as Abi,
+        functionName: 'computeDiscardAndDrawHand',
+        args: [deckId, handSize, randomSeed]
+      }) as { drawPile: `0x${string}`, hand: `0x${string}`, discardPile: `0x${string}` };
+      
+      // Now update the player's hand in the Battle contract
+      const updateHandData = encodeFunctionData({
+        abi: BattleABI as Abi,
+        functionName: 'updatePlayerHand',
+        args: [playerId]
+      });
+
+      try {
+        const updateHash = await forwardTransaction(
+          {
+            to: gameAddress,
+            data: updateHandData,
+            rpcUrl: this.config.ethRpcUrl,
+            relayerUrl: this.config.relayerUrl,
+            env: { ETH_RPC_URL: this.config.ethRpcUrl } as any
+          },
+          walletClient,
+          this.config.erc2771ForwarderAddress as `0x${string}`
+        );
+        this.logger.info({ tx: updateHash }, `Updated player hand in Battle contract`);
+        await publicClient.waitForTransactionReceipt({ hash: updateHash });
+      } catch (error: any) {
+        this.logger.warn({ error: error.message?.substring(0, 100) }, 'updatePlayerHand failed (continuing anyway)');
+      }
+    } else {
+      // Hand is already drawn for this turn - just get the current state
+      this.logger.info(`Using existing hand for turn ${currentTurn}`);
+      pileState = await publicClient.readContract({
+        address: playerDeckManagerAddress,
+        abi: PlayerDeckManagerABI as Abi,
+        functionName: 'getPileState',
+        args: [deckId]
+      }) as { drawPile: `0x${string}`, hand: `0x${string}`, discardPile: `0x${string}` };
+    }
+
+    // Now get the current energy AFTER drawing the hand
+    // This ensures we have the correct energy for the current turn
     const playerStats = await publicClient.readContract({
       address: gameAddress,
       abi: BattleABI as Abi,
@@ -241,24 +345,15 @@ export class CharacterOperator {
     }) as any;
 
     const statsBytes = playerStats.stats as string;
-    this.log('Raw player stats:', playerStats);
+    this.logger.info({ stats: playerStats }, 'Raw player stats');
     
     let currentEnergy = getPlayerEnergy(statsBytes);
-    this.log('Current energy:', currentEnergy);
+    this.logger.info({ energy: currentEnergy }, 'Current energy');
 
-    // Get player's card pile state
-    const cardPileState = await publicClient.readContract({
-      address: gameAddress,
-      abi: BattleABI as Abi,
-      functionName: 'getPlayerCardPileState',
-      args: [playerId]
-    }) as any;
-
-    const handBits = BigInt(cardPileState.hand);
-    this.log('Hand bits:', handBits.toString(16));
-    
+    // Convert hand bits to array of card IDs
+    const handBits = BigInt(pileState.hand);
     let handCards = cardPileBitsToArray(handBits);
-    this.log('Hand cards:', handCards);
+    this.logger.info({ cards: handCards }, 'Hand cards');
 
     // Calculate energy requirements for all cards at the beginning
     const cardEnergyRequirements: Map<number, bigint> = new Map();
@@ -270,18 +365,12 @@ export class CharacterOperator {
         args: [playerId, BigInt(i)]
       }) as bigint;
       cardEnergyRequirements.set(i, energyRequired);
-      this.log(`Card ${handCards[i]} at index ${i} requires ${energyRequired} energy`);
+      this.logger.info(`Card ${handCards[i]} at index ${i} requires ${energyRequired} energy`);
     }
 
     // Play cards while turn has not ended
     let actionsThisTurn = 0;
     const attemptedCardIndices = new Set<number>(); // Track which cards we've tried
-    
-    this.log('Starting card play loop:', {
-      currentEnergy,
-      handCardsLength: handCards.length,
-      actionsThisTurn,
-    });
     
     // Check if turn has ended
     let hasEndedTurn = await publicClient.readContract({
@@ -291,23 +380,43 @@ export class CharacterOperator {
       args: [playerId, currentTurn]
     }) as boolean;
     
+    this.logger.info({
+      currentTurn: currentTurn.toString(),
+      currentEnergy,
+      handCardsLength: handCards.length,
+      actionsThisTurn,
+      hasEndedTurn
+    }, 'Starting card play loop');
+    
     while (!hasEndedTurn) {
-      // Re-read hand state before each card play
-      const freshCardPileState = await publicClient.readContract({
-        address: gameAddress,
-        abi: BattleABI as Abi,
-        functionName: 'getPlayerCardPileState',
-        args: [playerId]
-      }) as any;
-
-      const freshHandBits = BigInt(freshCardPileState.hand);
-      handCards = cardPileBitsToArray(freshHandBits);
-      this.log('Refreshed hand cards:', handCards);
-
-      if (handCards.length === 0) {
-        this.log('No cards in hand after refresh');
-        break;
+      // Re-check deckId in case it was created during the game
+      if (deckId === 0n) {
+        const currentDeckId = await publicClient.readContract({
+          address: gameAddress,
+          abi: BattleABI as Abi,
+          functionName: 'playerDeckIds',
+          args: [playerId]
+        }) as bigint;
+        
+        if (currentDeckId === 0n) {
+          this.logger.info(`Deck still not created for player ${playerId}, cannot play cards`);
+          break;
+        }
+        // Update deckId if it was just created
+        deckId = currentDeckId;
       }
+
+      // Re-read hand state before each card play
+      const freshPileState = await publicClient.readContract({
+        address: playerDeckManagerAddress,
+        abi: PlayerDeckManagerABI as Abi,
+        functionName: 'getPileState',
+        args: [deckId]
+      }) as { drawPile: `0x${string}`, hand: `0x${string}`, discardPile: `0x${string}` };
+
+      const freshHandBits = BigInt(freshPileState.hand);
+      handCards = cardPileBitsToArray(freshHandBits);
+      this.logger.info({ cards: handCards }, 'Refreshed hand cards');
 
       // Find all playable cards (those we can afford with current energy and haven't tried yet)
       const playableCards: { handIndex: number; cardId: number; energyCost: bigint }[] = [];
@@ -338,12 +447,14 @@ export class CharacterOperator {
       
       // If no cards can be played or all playable cards have been tried, end the turn
       if (playableCards.length === 0 || untriedPlayableCards.length === 0) {
-        this.log('No more playable cards:', {
+        this.logger.info({
+          currentTurn: currentTurn.toString(),
           currentEnergy,
           playableCardsCount: playableCards.length,
           untriedCount: untriedPlayableCards.length,
-          attemptedCount: attemptedCardIndices.size
-        });
+          attemptedCount: attemptedCardIndices.size,
+          attemptedCards: Array.from(attemptedCardIndices)
+        }, 'No more playable cards');
         
         // Check if it's still our turn before ending
         const isStillOurTurn = await publicClient.readContract({
@@ -353,7 +464,7 @@ export class CharacterOperator {
         }) as boolean;
         
         if (isStillOurTurn !== this.config.teamA) {
-          this.log('Turn has already changed, not ending turn');
+          this.logger.info('Turn has already changed, not ending turn');
           break;
         }
         
@@ -362,13 +473,6 @@ export class CharacterOperator {
           abi: BattleABI as Abi,
           functionName: 'endTurn',
           args: [playerId]
-        });
-
-        const account = privateKeyToAccount(this.config.operatorPrivateKey as `0x${string}`);
-        const walletClient = createWalletClient({
-          account,
-          chain: arbitrum,
-          transport: createAuthenticatedHttpTransport(this.config.ethRpcUrl, { ETH_RPC_URL: this.config.ethRpcUrl })
         });
 
         try {
@@ -383,11 +487,13 @@ export class CharacterOperator {
             walletClient,
             this.config.erc2771ForwarderAddress as `0x${string}`
           );
-          this.log(`Ended turn (no playable cards), tx: ${hash}`);
+          this.logger.info({ tx: hash }, 'Ended turn (no playable cards)');
           await publicClient.waitForTransactionReceipt({ hash });
+          // Update hasEndedTurn flag after successfully ending turn
+          hasEndedTurn = true;
         } catch (error: any) {
           if (error.message?.includes('GameHasNotStartedError')) {
-            this.log('Game has ended, cannot end turn');
+            this.logger.info('Game has ended, cannot end turn');
           } else {
             throw error;
           }
@@ -404,13 +510,13 @@ export class CharacterOperator {
       // Mark this card as attempted (by card ID, not hand index)
       attemptedCardIndices.add(playableCardId);
 
-      this.log(`Randomly selected card ID ${playableCardId} at hand index ${playableHandIndex}, energy cost: ${energyCost}`);
+      this.logger.info(`Randomly selected card ID ${playableCardId} at hand index ${playableHandIndex}, energy cost: ${energyCost}`);
       
       // Get active enemy players to target
       const enemyPlayers = await this.getActiveEnemyPlayers();
       
       if (enemyPlayers.length === 0) {
-        this.log('No enemy players available');
+        this.logger.info('No enemy players available');
         break;
       }
 
@@ -428,13 +534,6 @@ export class CharacterOperator {
         args: [playerId, BigInt(playableHandIndex), actionParams]
       });
 
-      const account = privateKeyToAccount(this.config.operatorPrivateKey as `0x${string}`);
-      const walletClient = createWalletClient({
-        account,
-        chain: arbitrum,
-        transport: createAuthenticatedHttpTransport(this.config.ethRpcUrl, { ETH_RPC_URL: this.config.ethRpcUrl })
-      });
-
       try {
         const hash = await forwardTransaction(
           {
@@ -448,7 +547,7 @@ export class CharacterOperator {
           this.config.erc2771ForwarderAddress as `0x${string}`
         );
 
-        this.log(`Played card ID ${playableCardId} at hand index ${playableHandIndex} against player ${randomEnemy.playerId}, tx: ${hash}`);
+        this.logger.info({ cardId: playableCardId, handIndex: playableHandIndex, targetPlayer: randomEnemy.playerId, tx: hash }, 'Played card');
         
         await publicClient.waitForTransactionReceipt({ hash });
         
@@ -464,32 +563,32 @@ export class CharacterOperator {
         currentEnergy = getPlayerEnergy(updatedStatsBytes);
         
         actionsThisTurn++;
-        this.log('Updated energy:', currentEnergy, 'Hand size:', handCards.length);
+        this.logger.info({ energy: currentEnergy, handSize: handCards.length }, 'Updated energy');
         
         this.lastActionTime = Date.now();
         
         // Sleep for 1 second after successfully playing an action
-        this.log('Sleeping for 1 second after action...');
+        this.logger.info('Sleeping for 1 second after action...');
         await new Promise(resolve => setTimeout(resolve, 1000));
       } catch (error: any) {
         if (error.message?.includes('CardNotInHandError')) {
           // This can happen if there's a race condition or state mismatch
-          this.error('CardNotInHandError - marking card as attempted and continuing', {
+          this.logger.info({
             playableHandIndex,
             playableCardId,
             attemptedIndices: Array.from(attemptedCardIndices)
-          });
+          }, 'CardNotInHandError - marking card as attempted and continuing');
           // Continue to next iteration instead of breaking - this allows us to try other cards
           // The attempted card is already marked, so we won't try it again
           continue;
         } else if (error.message?.includes('GameHasNotStartedError')) {
-          this.log('Game has ended, stopping card play');
+          this.logger.info('Game has ended, stopping card play');
           break;
         } else if (error.message?.includes('InsufficientEnergyError')) {
-          this.log('Insufficient energy for card, this should not happen with proper energy checking');
+          this.logger.warn('Insufficient energy for card, this should not happen with proper energy checking');
           break;
         } else {
-          this.log('Error playing card:', error);
+          this.logger.error({ error: error.message || error }, 'Error playing card');
           throw error;
         }
       }
@@ -505,7 +604,7 @@ export class CharacterOperator {
 
     // Turn should be ended by now, either explicitly when no cards could be played
     // or automatically by the contract when energy is depleted
-    this.log('Turn play completed');
+    this.logger.info('Turn play completed');
   }
   
   private async getBattlePlayers(): Promise<BattlePlayer[]> {

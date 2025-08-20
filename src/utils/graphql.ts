@@ -147,15 +147,39 @@ export interface Party {
   createdAt: string;
   startedAt: string | null;
   endedAt: string | null;
+  roomBattles?: {
+    items: PartyRoomBattle[];
+  };
+}
+
+export interface PartyRoomBattle {
+  id: string;
+  partyId: string;
+  battleAddress: string;
+  roomId: string;
+  createdAt: string;
+  party?: Party;
+  battle?: Battle;
 }
 
 export interface ActRoom {
   id: string;
   actAddress: string;
-  roomHash: string;
-  parentRoomHash: string | null;
-  parentDoorIndex: string | null;
+  roomId: string;
+  roomType: string;
+  roomData: string | null;
   revealedAt: string | null;
+}
+
+export interface BattleRoomData {
+  id: string;
+  actAddress: string;
+  partyId: string;
+  roomId: string;
+  monsterIndex1: string;
+  battleAddress: string | null;
+  createdAt: string;
+  startedAt: string | null;
 }
 
 export interface Battle {
@@ -174,6 +198,7 @@ export interface BattlePlayer {
   teamA: boolean;
   eliminated: boolean;
   battle: Battle;
+  lastTurnHandDrawn?: string;
 }
 
 export interface BattleTurn {
@@ -196,6 +221,19 @@ export interface Character {
 
 export interface Act {
   address: string;
+  startingRoomId: string;
+  battleFactory: string;
+  deckConfiguration: string;
+  monsterRegistry: string;
+  playerDeckManager: string;
+  maxDepth: string;
+  turnDuration: string;
+  isClosed: boolean;
+  owner: string;
+  operator: string;
+  trustedForwarder: string;
+  rngSeed: string;
+  createdAt: string;
 }
 
 // Query helpers
@@ -229,9 +267,9 @@ export const GraphQLQueries = {
         items {
           id
           actAddress
-          roomHash
-          parentRoomHash
-          parentDoorIndex
+          roomId
+          roomType
+          roomData
           revealedAt
         }
       }
@@ -253,6 +291,50 @@ export const GraphQLQueries = {
           createdAt
           startedAt
           endedAt
+        }
+      }
+    }
+  `,
+
+  getPartyWithRoomBattles: `
+    query GetPartyWithRoomBattles($actAddress: String!, $partyId: String!) {
+      partys(where: { actAddress: $actAddress, partyId: $partyId}) {
+        items {
+          id
+          actAddress
+          partyId
+          leader
+          roomId
+          state
+          roomBattles {
+            items {
+              id
+              partyId
+              battleAddress
+              roomId
+              createdAt
+            }
+          }
+        }
+      }
+    }
+  `,
+
+  getPartyRoomBattles: `
+    query GetPartyRoomBattles($partyId: String!) {
+      partyRoomBattles(where: { partyId: $partyId }) {
+        items {
+          id
+          partyId
+          battleAddress
+          roomId
+          createdAt
+          battle {
+            id
+            gameStartedAt
+            gameEndedAt
+            winner
+          }
         }
       }
     }
@@ -294,6 +376,7 @@ export const GraphQLQueries = {
           playerId
           teamA
           eliminated
+          lastTurnHandDrawn
           character {
             id
             name
@@ -313,6 +396,7 @@ export const GraphQLQueries = {
           playerId
           teamA
           eliminated
+          lastTurnHandDrawn
           character {
             id
             name
@@ -367,6 +451,7 @@ export const GraphQLQueries = {
               playerId
               teamA
               eliminated
+              lastTurnHandDrawn
               character {
                 id
                 name
@@ -450,6 +535,7 @@ export const GraphQLQueries = {
               playerId
               teamA
               eliminated
+              lastTurnHandDrawn
               battle {
                 id
                 gameStartedAt

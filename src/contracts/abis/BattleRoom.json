@@ -36,22 +36,14 @@
         "name": "_playerDeckManager",
         "type": "address",
         "internalType": "contract PlayerDeckManager"
+      },
+      {
+        "name": "_playerStatsStorage",
+        "type": "address",
+        "internalType": "contract PlayerStatsStorage"
       }
     ],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "TURN_DURATION",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -122,24 +114,14 @@
             "internalType": "uint16"
           },
           {
-            "name": "monsterIndex1",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
-            "name": "monsterIndex2",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
-            "name": "monsterIndex3",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
             "name": "nextRooms",
             "type": "uint32[6]",
             "internalType": "uint32[6]"
+          },
+          {
+            "name": "roomData",
+            "type": "bytes",
+            "internalType": "bytes"
           }
         ]
       },
@@ -255,6 +237,29 @@
   },
   {
     "type": "function",
+    "name": "leaveRoom",
+    "inputs": [
+      {
+        "name": "actAddress",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "partyId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "roomId",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "monsterRegistry",
     "inputs": [],
     "outputs": [
@@ -299,7 +304,7 @@
       {
         "name": "act",
         "type": "address",
-        "internalType": "address"
+        "internalType": "contract Act"
       },
       {
         "name": "partyId",
@@ -330,6 +335,19 @@
         "name": "",
         "type": "address",
         "internalType": "contract PlayerDeckManager"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "playerStatsStorage",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract PlayerStatsStorage"
       }
     ],
     "stateMutability": "view"
@@ -449,6 +467,19 @@
         "type": "uint32",
         "indexed": true,
         "internalType": "uint32"
+      },
+      {
+        "name": "data",
+        "type": "tuple",
+        "indexed": false,
+        "internalType": "struct BattleRoomData",
+        "components": [
+          {
+            "name": "monsterIndex1",
+            "type": "uint16",
+            "internalType": "uint16"
+          }
+        ]
       },
       {
         "name": "battle",

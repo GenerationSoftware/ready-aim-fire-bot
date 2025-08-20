@@ -59,9 +59,9 @@
         "internalType": "contract Character"
       },
       {
-        "name": "tokens",
+        "name": "cards",
         "type": "tuple[]",
-        "internalType": "struct Token[]",
+        "internalType": "struct Cards[]",
         "components": [
           {
             "name": "deck",
@@ -69,9 +69,9 @@
             "internalType": "contract IDeck"
           },
           {
-            "name": "tokenId",
-            "type": "uint96",
-            "internalType": "uint96"
+            "name": "actionTypes",
+            "type": "uint32[]",
+            "internalType": "uint32[]"
           }
         ]
       },
@@ -206,9 +206,9 @@
         "internalType": "contract Character"
       },
       {
-        "name": "tokens",
+        "name": "cards",
         "type": "tuple[]",
-        "internalType": "struct Token[]",
+        "internalType": "struct Cards[]",
         "components": [
           {
             "name": "deck",
@@ -216,9 +216,9 @@
             "internalType": "contract IDeck"
           },
           {
-            "name": "tokenId",
-            "type": "uint96",
-            "internalType": "uint96"
+            "name": "actionTypes",
+            "type": "uint32[]",
+            "internalType": "uint32[]"
           }
         ]
       },
@@ -246,9 +246,9 @@
         "internalType": "contract Character"
       },
       {
-        "name": "tokens",
+        "name": "cards",
         "type": "tuple[]",
-        "internalType": "struct Token[]",
+        "internalType": "struct Cards[]",
         "components": [
           {
             "name": "deck",
@@ -256,9 +256,9 @@
             "internalType": "contract IDeck"
           },
           {
-            "name": "tokenId",
-            "type": "uint96",
-            "internalType": "uint96"
+            "name": "actionTypes",
+            "type": "uint32[]",
+            "internalType": "uint32[]"
           }
         ]
       },
@@ -518,11 +518,6 @@
       }
     ],
     "anonymous": false
-  },
-  {
-    "type": "error",
-    "name": "AlreadyWonActError",
-    "inputs": []
   },
   {
     "type": "error",

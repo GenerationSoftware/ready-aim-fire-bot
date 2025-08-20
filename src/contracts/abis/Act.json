@@ -26,6 +26,11 @@
         "name": "_playerDeckManager",
         "type": "address",
         "internalType": "contract PlayerDeckManager"
+      },
+      {
+        "name": "_playerStatsStorage",
+        "type": "address",
+        "internalType": "contract PlayerStatsStorage"
       }
     ],
     "stateMutability": "nonpayable"
@@ -181,9 +186,9 @@
         "internalType": "contract Character"
       },
       {
-        "name": "tokens",
+        "name": "cards",
         "type": "tuple[]",
-        "internalType": "struct Token[]",
+        "internalType": "struct Cards[]",
         "components": [
           {
             "name": "deck",
@@ -191,9 +196,9 @@
             "internalType": "contract IDeck"
           },
           {
-            "name": "tokenId",
-            "type": "uint96",
-            "internalType": "uint96"
+            "name": "actionTypes",
+            "type": "uint32[]",
+            "internalType": "uint32[]"
           }
         ]
       },
@@ -250,30 +255,56 @@
             "internalType": "uint16"
           },
           {
-            "name": "monsterIndex1",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
-            "name": "monsterIndex2",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
-            "name": "monsterIndex3",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
             "name": "nextRooms",
             "type": "uint32[6]",
             "internalType": "uint32[6]"
+          },
+          {
+            "name": "roomData",
+            "type": "bytes",
+            "internalType": "bytes"
           }
         ]
       }
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "getPlayerStats",
+    "inputs": [
+      {
+        "name": "playerId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct PlayerStats",
+        "components": [
+          {
+            "name": "teamA",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "turn",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "stats",
+            "type": "bytes30",
+            "internalType": "bytes30"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -347,6 +378,25 @@
   },
   {
     "type": "function",
+    "name": "isStatOperator",
+    "inputs": [
+      {
+        "name": "operator",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "isTrustedForwarder",
     "inputs": [
       {
@@ -374,9 +424,9 @@
         "internalType": "contract Character"
       },
       {
-        "name": "tokens",
+        "name": "cards",
         "type": "tuple[]",
-        "internalType": "struct Token[]",
+        "internalType": "struct Cards[]",
         "components": [
           {
             "name": "deck",
@@ -384,9 +434,9 @@
             "internalType": "contract IDeck"
           },
           {
-            "name": "tokenId",
-            "type": "uint96",
-            "internalType": "uint96"
+            "name": "actionTypes",
+            "type": "uint32[]",
+            "internalType": "uint32[]"
           }
         ]
       },
@@ -409,9 +459,9 @@
         "internalType": "contract Character"
       },
       {
-        "name": "tokens",
+        "name": "cards",
         "type": "tuple[]",
-        "internalType": "struct Token[]",
+        "internalType": "struct Cards[]",
         "components": [
           {
             "name": "deck",
@@ -419,9 +469,9 @@
             "internalType": "contract IDeck"
           },
           {
-            "name": "tokenId",
-            "type": "uint96",
-            "internalType": "uint96"
+            "name": "actionTypes",
+            "type": "uint32[]",
+            "internalType": "uint32[]"
           }
         ]
       },
@@ -461,24 +511,14 @@
             "internalType": "uint16"
           },
           {
-            "name": "monsterIndex1",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
-            "name": "monsterIndex2",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
-            "name": "monsterIndex3",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
             "name": "nextRooms",
             "type": "uint32[6]",
             "internalType": "uint32[6]"
+          },
+          {
+            "name": "roomData",
+            "type": "bytes",
+            "internalType": "bytes"
           }
         ]
       }
@@ -653,6 +693,30 @@
   },
   {
     "type": "function",
+    "name": "partyMemberAtIndex",
+    "inputs": [
+      {
+        "name": "_partyId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "_index",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract Character"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "partyMembers",
     "inputs": [
       {
@@ -671,6 +735,25 @@
         "name": "members",
         "type": "address",
         "internalType": "contract Character"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "partyMembersCount",
+    "inputs": [
+      {
+        "name": "_partyId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -714,6 +797,19 @@
   },
   {
     "type": "function",
+    "name": "playerStatsStorage",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract PlayerStatsStorage"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "renounceOperatorship",
     "inputs": [],
     "outputs": [],
@@ -748,24 +844,14 @@
             "internalType": "uint16"
           },
           {
-            "name": "monsterIndex1",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
-            "name": "monsterIndex2",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
-            "name": "monsterIndex3",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
             "name": "nextRooms",
             "type": "uint32[6]",
             "internalType": "uint32[6]"
+          },
+          {
+            "name": "roomData",
+            "type": "bytes",
+            "internalType": "bytes"
           }
         ]
       }
@@ -1048,24 +1134,14 @@
             "internalType": "uint16"
           },
           {
-            "name": "monsterIndex1",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
-            "name": "monsterIndex2",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
-            "name": "monsterIndex3",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
             "name": "nextRooms",
             "type": "uint32[6]",
             "internalType": "uint32[6]"
+          },
+          {
+            "name": "roomData",
+            "type": "bytes",
+            "internalType": "bytes"
           }
         ]
       }
@@ -1142,11 +1218,6 @@
   {
     "type": "error",
     "name": "InvalidSignatureError",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InvalidTokenOwnerError",
     "inputs": []
   },
   {

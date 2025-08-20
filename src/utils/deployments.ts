@@ -12,7 +12,6 @@ export const CONTRACT_ADDRESSES = {
   BATTLE: getContractAddress('Battle'),
   STANDARD_DECK: getContractAddress('StandardDeck'),
   STANDARD_DECK_LOGIC: getContractAddress('StandardDeckLogic'),
-  MINTER: getContractAddress('Minter'),
   BATTLE_FACTORY: getContractAddress('BattleFactory'),
   MONSTER_REGISTRY: getContractAddress('MonsterRegistry'),
   CHARACTER_FACTORY: getContractAddress('CharacterFactory'),

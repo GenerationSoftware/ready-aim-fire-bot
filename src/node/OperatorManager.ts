@@ -37,35 +37,82 @@ export class OperatorManager {
   }
 
   private async checkCharacterOperators() {
-    this.logger.debug("Checking character operators...");
+    this.logger.info("Checking character operators...");
     try {
       const graphqlClient = createGraphQLClient({ GRAPHQL_URL: this.config.graphqlUrl });
       
-      // Step 1: Get all characters owned by the operator
-      // Get all characters owned by the operator (with pagination)
-      const characters = await queryAllPages<{ items: Character[] }>(
+      // Step 1: Get all characters where operator address is set as operator
+      this.logger.info(`Looking for characters with operator: ${this.config.operatorAddress.toLowerCase()}`);
+      
+      // Try finding characters where we are the operator (not owner)
+      const charactersAsOperator = await queryAllPages<{ items: Character[] }>(
+        graphqlClient,
+        `query GetCharactersByOperator($operator: String!, $limit: Int = 100, $after: String) {
+          characters(where: { operator: $operator }, limit: $limit, after: $after) {
+            items {
+              id
+              name
+              owner
+              operator
+            }
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+            totalCount
+          }
+        }`,
+        { operator: this.config.operatorAddress.toLowerCase() }
+      );
+      
+      // Also check if we own any characters
+      const charactersAsOwner = await queryAllPages<{ items: Character[] }>(
         graphqlClient,
         GraphQLQueries.getCharactersByOwner,
         { owner: this.config.operatorAddress.toLowerCase() }
       );
+      
+      // Combine both lists (removing duplicates)
+      const characterMap = new Map<string, Character>();
+      [...charactersAsOperator, ...charactersAsOwner].forEach(c => characterMap.set(c.id, c));
+      const characters = Array.from(characterMap.values());
 
       if (!characters.length) {
-        this.logger.debug("No characters found for operator");
+        this.logger.info("No characters found for operator address");
         return;
       }
 
       const characterIds = characters.map(c => c.id);
-      this.logger.debug(`Found ${characterIds.length} characters for operator`);
+      this.logger.info(`Found ${characterIds.length} characters for operator: ${characterIds.join(', ')}`);
 
       // Step 2: Get all active battles where these characters are playing
       const battlesResult = await graphqlClient.query<{ battles: { items: any[] } }>(
         GraphQLQueries.getActiveBattlesForCharacters,
         { characterIds }
       );
+      
+      this.logger.info(`Found ${battlesResult.battles.items.length} active battles for characters`);
 
       let foundCharacters = 0;
 
       for (const battle of battlesResult.battles.items) {
+        // Skip battles that have a winner (game has ended)
+        if (battle.winner && battle.winner !== "0" && battle.winner !== 0) {
+          this.logger.info(`Skipping battle ${battle.id} - has winner: ${battle.winner}`);
+          
+          // Stop any existing operators for this ended battle
+          for (const player of battle.players?.items || []) {
+            const operatorKey = `${battle.id}-${player.playerId}`;
+            const existingOperator = this.characterOperators.get(operatorKey);
+            if (existingOperator) {
+              this.logger.info(`Stopping CharacterOperator for ended battle: ${operatorKey}`);
+              existingOperator.stop();
+              this.characterOperators.delete(operatorKey);
+            }
+          }
+          continue;
+        }
+        
         if (!battle.players?.items) continue;
 
         for (const player of battle.players.items) {
@@ -149,6 +196,17 @@ export class OperatorManager {
       }
       const gameState = Number(response.result);
       this.logger.debug(`Battle ${battle.id} has gameState: ${gameState}`);
+      
+      // If battle has ended (gameState > 2), clean up its operator
+      if (gameState > 2) {
+        const existingOperator = this.battleOperators.get(battle.id.toLowerCase());
+        if (existingOperator) {
+          this.logger.info(`Stopping BattleOperator for ended battle: ${battle.id} (gameState: ${gameState})`);
+          existingOperator.stop();
+          this.battleOperators.delete(battle.id.toLowerCase());
+        }
+      }
+      
       return gameState === 2;
     });
 
@@ -248,7 +306,7 @@ export class OperatorManager {
     // Initial check
     try {
       await this.checkAndStartBots();
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error("Error during initial bot check:", error);
     }
 
@@ -257,7 +315,7 @@ export class OperatorManager {
       this.logger.debug("OperatorManager periodic check...");
       try {
         await this.checkAndStartBots();
-      } catch (error) {
+      } catch (error: any) {
         this.logger.error("Error during periodic check:", error);
       }
     }, 5000);

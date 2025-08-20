@@ -1,10 +1,10 @@
-import { createPublicClient, createWalletClient, encodeFunctionData, type Abi } from "viem";
+import { createPublicClient, createWalletClient, encodeFunctionData, encodeAbiParameters, type Abi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
 import ActABI from "../contracts/abis/Act.json";
 import BattleRoomABI from "../contracts/abis/BattleRoom.json";
 import { forwardTransaction } from "../forwarder/forwardTransaction";
-import { createGraphQLClient, GraphQLQueries, type Party, type ActRoom } from "../utils/graphql";
+import { createGraphQLClient, GraphQLQueries, PartyState, type Party, type ActRoom } from "../utils/graphql";
 import { createAuthenticatedHttpTransport } from "../utils/rpc";
 import { createLogger } from "../utils/logger";
 import type { Logger } from "pino";
@@ -13,19 +13,28 @@ import type { EventAggregator } from "./EventAggregator";
 
 // Room struct matching the Solidity contract
 interface Room {
+  roomType: number; // uint16
+  nextRooms: number[]; // uint32[6] array  
+  roomData: `0x${string}`; // bytes - ABI encoded BattleRoomData
+}
+
+// Internal room data before encoding
+interface RoomInternal {
   roomType: number;
   monsterIndex1: number;
   monsterIndex2: number;
   monsterIndex3: number;
-  nextRooms: number[]; // uint32[6] array
+  nextRooms: number[];
 }
 
 // Map room from the JSON - flat array structure
 interface MapRoom {
   id: number;
   roomType: number; // 0=NULL, 1=BATTLE, 2=GOAL
-  monsterIndex1: number | null; // Monster index (0-65535) or null
-  nextRooms: number[]; // Array of next room IDs (up to 6)
+  roomData: {
+    monsterIndex1: number;
+  } | null; // Room data with monster index for BATTLE rooms, null otherwise
+  nextRooms: number[]; // Array of 6 room IDs, with 0 meaning no connection
 }
 
 export interface ActOperatorConfig {
@@ -52,7 +61,7 @@ export class ActOperator {
   private eventUnsubscribes: Array<() => void> = [];
   private processingParties: Set<string> = new Set(); // Track parties being processed
   private recentlyProcessedParties: Map<string, number> = new Map(); // Track recently processed parties with timestamp
-  private roomMap: Map<number, Room> = new Map(); // Cache of room ID to Room struct
+  private roomMap: Map<number, RoomInternal> = new Map(); // Cache of room ID to Room struct
   private startingRoomId?: number; // Cache the starting room ID
   private battleRoomAddress?: string; // Cache the BattleRoom contract address
 
@@ -61,21 +70,9 @@ export class ActOperator {
     this.logger = createLogger({ operator: 'ActOperator', actAddress: config.actAddress });
   }
 
-  private log(...args: any[]) {
-    if (args.length === 1) {
-      this.logger.info(args[0]);
-    } else {
-      this.logger.info(args[0], ...args.slice(1));
-    }
-  }
 
-  private error(...args: any[]) {
-    if (args.length === 1) {
-      this.logger.error(args[0]);
-    } else {
-      this.logger.error(args[0], ...args.slice(1));
-    }
-  }
+
+
 
   private async fetchAndProcessMap(): Promise<void> {
     try {
@@ -85,7 +82,7 @@ export class ActOperator {
       const rafApiPassword = this.config.rafApiPassword || process.env.RAF_API_PASSWORD;
 
       if (!rafApiUrl || !rafApiUsername || !rafApiPassword) {
-        this.error("Missing RAF API configuration. Please set RAF_API_URL, RAF_API_USERNAME, and RAF_API_PASSWORD");
+        this.logger.error("Missing RAF API configuration. Please set RAF_API_URL, RAF_API_USERNAME, and RAF_API_PASSWORD");
         return;
       }
 
@@ -101,7 +98,7 @@ export class ActOperator {
         functionName: 'STARTING_ROOM_ID'
       }));
 
-      this.log(`Starting room ID: ${this.startingRoomId}`);
+      this.logger.info(`Starting room ID: ${this.startingRoomId}`);
       
       // Get the BattleRoom contract address
       this.battleRoomAddress = await publicClient.readContract({
@@ -110,7 +107,7 @@ export class ActOperator {
         functionName: 'battleRoom'
       }) as string;
       
-      this.log(`BattleRoom address: ${this.battleRoomAddress}`);
+      this.logger.info(`BattleRoom address: ${this.battleRoomAddress}`);
 
       // Query GraphQL to get season name and act index for this act
       const graphqlClient = createGraphQLClient({ GRAPHQL_URL: this.config.graphqlUrl });
@@ -133,7 +130,7 @@ export class ActOperator {
       });
 
       if (!seasonActResult.seasonActs.items || seasonActResult.seasonActs.items.length === 0) {
-        this.error(`SeasonAct not found in GraphQL for address ${this.config.actAddress}`);
+        this.logger.error(`SeasonAct not found in GraphQL for address ${this.config.actAddress}`);
         return;
       }
 
@@ -157,18 +154,18 @@ export class ActOperator {
       });
 
       if (!seasonResult.seasons.items || seasonResult.seasons.items.length === 0) {
-        this.error(`Season not found in GraphQL for address ${seasonActInfo.seasonAddress}`);
+        this.logger.error(`Season not found in GraphQL for address ${seasonActInfo.seasonAddress}`);
         return;
       }
 
       const seasonName = seasonResult.seasons.items[0].name;
       
-      this.log(`Act info: season=${seasonName}, actIndex=${actIndex}`);
+      this.logger.info(`Act info: season=${seasonName}, actIndex=${actIndex}`);
 
       // Fetch the map JSON with new URL structure
       const mapUrl = `${rafApiUrl}/season/${seasonName}/act/${actIndex}/map.json`;
       
-      this.log(`Fetching map from: ${mapUrl}`);
+      this.logger.info(`Fetching map from: ${mapUrl}`);
       
       const auth = btoa(`${rafApiUsername}:${rafApiPassword}`);
       const response = await fetch(mapUrl, {
@@ -182,29 +179,34 @@ export class ActOperator {
       }
 
       const mapResponse: any = await response.json();
-      this.log(`Map data fetched successfully - raw response type: ${typeof mapResponse}, isArray: ${Array.isArray(mapResponse)}`);
+      this.logger.info(`Map data fetched successfully - raw response type: ${typeof mapResponse}, isArray: ${Array.isArray(mapResponse)}`);
       
       // The response should be a direct array of rooms
       if (!Array.isArray(mapResponse)) {
-        this.error(`Expected array but got: ${JSON.stringify(mapResponse).substring(0, 500)}`);
+        this.logger.error(`Expected array but got: ${JSON.stringify(mapResponse).substring(0, 500)}`);
         throw new Error(`Map response is not an array`);
       }
       
       const mapData = mapResponse as MapRoom[];
-      this.log(`Processing ${mapData.length} rooms from map`);
+      this.logger.info(`Processing ${mapData.length} rooms from map`);
+      
+      // Log first room to check structure
+      if (mapData.length > 0) {
+        this.logger.info({ structure: JSON.stringify(mapData[0], null, 2) }, `First room structure:`);
+      }
 
       // Process the flat array of rooms into room ID -> Room struct mapping
       this.processMapRooms(mapData);
-      this.log(`Processed ${this.roomMap.size} rooms from map`);
+      this.logger.info(`Processed ${this.roomMap.size} rooms from map`);
 
     } catch (error: any) {
-      this.error(`Error fetching or processing map: ${error.message || error}`, {
+      this.logger.error({
         message: error.message,
         stack: error.stack,
         rafApiUrl: this.config.rafApiUrl || process.env.RAF_API_URL,
         actAddress: this.config.actAddress,
         error: error.toString()
-      });
+      }, `Error fetching or processing map: ${error.message || error}`);
     }
   }
 
@@ -214,10 +216,14 @@ export class ActOperator {
       // roomType is already a number: 0=NULL, 1=BATTLE, 2=GOAL
       const roomTypeNum = mapRoom.roomType;
       
-      // monsterIndex1 is now directly an integer or null
-      const monsterIndex = mapRoom.monsterIndex1 ?? 0;
+      // Extract monsterIndex1 from roomData for BATTLE rooms
+      const monsterIndex = mapRoom.roomData?.monsterIndex1 ?? 0;
       
       // Ensure nextRooms array is exactly 6 elements
+      if (!mapRoom.nextRooms) {
+        this.logger.error({ room: mapRoom }, `Room ${mapRoom.id} has undefined nextRooms!`);
+        throw new Error(`Room ${mapRoom.id} is missing nextRooms array`);
+      }
       const nextRooms = [...mapRoom.nextRooms];
       while (nextRooms.length < 6) {
         nextRooms.push(0);
@@ -225,8 +231,8 @@ export class ActOperator {
       // Trim to exactly 6 if somehow longer
       nextRooms.splice(6);
       
-      // Create the Room struct matching the Solidity structure
-      const room: Room = {
+      // Create the internal room struct
+      const room: RoomInternal = {
         roomType: roomTypeNum,
         monsterIndex1: monsterIndex,
         monsterIndex2: 0, // Not used in current map format
@@ -238,7 +244,7 @@ export class ActOperator {
       this.roomMap.set(mapRoom.id, room);
       
       const roomTypeStr = roomTypeNum === 0 ? 'NULL' : roomTypeNum === 1 ? 'BATTLE' : roomTypeNum === 2 ? 'GOAL' : 'UNKNOWN';
-      this.log(`Stored room: id=${mapRoom.id}, type=${roomTypeStr}(${roomTypeNum}), monster=${monsterIndex}, nextRooms=[${nextRooms.filter(r => r > 0).join(',')}]`);
+      this.logger.info(`Stored room: id=${mapRoom.id}, type=${roomTypeStr}(${roomTypeNum}), monster=${monsterIndex}, nextRooms=[${nextRooms.filter(r => r > 0).join(',')}]`);
     }
   }
 
@@ -246,15 +252,23 @@ export class ActOperator {
 
   async start() {
     if (this.isRunning) {
-      this.log("Already running");
+      this.logger.info("Already running");
       return;
     }
 
     this.isRunning = true;
-    this.log("Starting...");
+    this.logger.info("Starting...");
 
     // Fetch and process the map data
     await this.fetchAndProcessMap();
+    
+    // Log the state of roomMap after fetching
+    this.logger.info(`Map fetching complete. roomMap size: ${this.roomMap.size}`);
+    if (this.roomMap.size === 0) {
+      this.logger.error("WARNING: roomMap is empty after fetchAndProcessMap!");
+    } else {
+      this.logger.info(`Room IDs in map: ${Array.from(this.roomMap.keys()).join(', ')}`);
+    }
 
     // Subscribe to events
     this.subscribeToEvents();
@@ -278,9 +292,9 @@ export class ActOperator {
         address: this.config.actAddress,
         onEvent: async (logs: any[]) => {
           for (const log of logs) {
-            this.log("PartyStartedEvent received:", {
+            this.logger.info({
               partyId: log.args?.partyId?.toString()
-            });
+            }, "PartyStartedEvent received:");
             // Check if party needs to enter a room
             await this.checkSinglePartyProgress(log.args?.partyId);
           }
@@ -296,10 +310,10 @@ export class ActOperator {
         address: this.config.actAddress,
         onEvent: async (logs: any[]) => {
           for (const log of logs) {
-            this.log("NextRoomChosenEvent received:", {
+            this.logger.info({
               partyId: log.args?.partyId?.toString(),
               roomId: log.args?.roomId?.toString()
-            });
+            }, "NextRoomChosenEvent received:");
             // Check if party needs to enter a room
             await this.checkSinglePartyProgress(log.args?.partyId);
           }
@@ -319,15 +333,15 @@ export class ActOperator {
         address: this.config.actAddress,
         onEvent: async (logs: any[]) => {
           for (const log of logs) {
-            this.log("RoomEnteredEvent received:", {
+            this.logger.info({
               partyId: log.args?.partyId?.toString(),
               roomId: log.args?.roomId?.toString()
-            });
+            }, "RoomEnteredEvent received:");
             // Mark this party as recently processed since they've already entered
             const partyKey = log.args?.partyId?.toString();
             if (partyKey) {
               this.recentlyProcessedParties.set(partyKey, Date.now());
-              this.log(`Party ${partyKey} has entered room, marking as processed`);
+              this.logger.info(`Party ${partyKey} has entered room, marking as processed`);
             }
           }
         }
@@ -343,33 +357,33 @@ export class ActOperator {
           address: this.battleRoomAddress,
           onEvent: async (logs: any[]) => {
             for (const log of logs) {
-              this.log("BattleStarted event received:", {
+              this.logger.info({
                 battleAddress: log.args?.battleAddress,
                 actAddress: log.args?.actAddress,
                 partyId: log.args?.partyId?.toString()
-              });
+              }, "BattleStarted event received:");
               // Mark this party as recently processed since they're in battle
               const partyKey = log.args?.partyId?.toString();
               if (partyKey) {
                 this.recentlyProcessedParties.set(partyKey, Date.now());
-                this.log(`Party ${partyKey} has started battle, marking as processed`);
+                this.logger.info(`Party ${partyKey} has started battle, marking as processed`);
               }
             }
           }
         })
       );
     } else {
-      this.error("BattleRoom address not found, cannot subscribe to BattleStarted event");
+      this.logger.error("BattleRoom address not found, cannot subscribe to BattleStarted event");
     }
   }
 
   stop() {
     if (!this.isRunning) {
-      this.log("Not running");
+      this.logger.info("Not running");
       return;
     }
 
-    this.log("Stopping...");
+    this.logger.info("Stopping...");
     this.isRunning = false;
 
     // Unsubscribe from events
@@ -377,10 +391,16 @@ export class ActOperator {
       try {
         unsubscribe();
       } catch (error: any) {
-        this.error("Error unsubscribing from event:", {
+        this.logger.error({ error: {
           message: error.message,
           stack: error.stack
-        });
+        }?.message || {
+          message: error.message,
+          stack: error.stack
+        }, stack: {
+          message: error.message,
+          stack: error.stack
+        }?.stack }, "Error unsubscribing from event:");
       }
     }
     this.eventUnsubscribes = [];
@@ -408,14 +428,20 @@ export class ActOperator {
     try {
       const hasActiveParties = await this.checkAllPartiesProgress();
       if (!hasActiveParties) {
-        this.log("No active parties found, stopping operator");
+        this.logger.info("No active parties found, stopping operator");
         this.stop();
       }
     } catch (error: any) {
-      this.error("Error in periodic check:", {
+      this.logger.error({ error: {
         message: error.message,
         stack: error.stack
-      });
+      }?.message || {
+        message: error.message,
+        stack: error.stack
+      }, stack: {
+        message: error.message,
+        stack: error.stack
+      }?.stack }, "Error in periodic check:");
     }
   }
 
@@ -432,18 +458,25 @@ export class ActOperator {
       const party = result.partys.items[0];
       
       if (party) {
-        this.log(`Processing party ${partyId} after event`);
-        await this.checkParty(partyId, party);
+        // Only process parties in ROOM_CHOSEN state (state = 1)
+        // GraphQL returns state as a string, need to convert to number
+        const partyStateNum = Number(party.state);
+        if (partyStateNum === PartyState.ROOM_CHOSEN) {
+          this.logger.info(`Processing party ${partyId} after event (state: ${partyStateNum})`);
+          await this.checkParty(partyId, party);
+        } else {
+          this.logger.info(`Party ${partyId} is in state ${partyStateNum}, not ROOM_CHOSEN (${PartyState.ROOM_CHOSEN}), skipping`);
+        }
       } else {
-        this.log(`Party ${partyId} not found or not in ROOM_CHOSEN state`);
+        this.logger.info(`Party ${partyId} not found`);
       }
 
     } catch (error: any) {
-      this.error(`Error in checkSinglePartyProgress for party ${partyId}:`, {
+      this.logger.error({
         message: error.message,
         stack: error.stack,
         partyId: partyId.toString()
-      });
+      }, `Error in checkSinglePartyProgress for party ${partyId}:`);
     }
   }
 
@@ -457,7 +490,7 @@ export class ActOperator {
 
       const roomChosenParties = result.partys.items;
       
-      this.log(`Periodic check - Found ${roomChosenParties.length} parties in ROOM_CHOSEN state`);
+      this.logger.info(`Periodic check - Found ${roomChosenParties.length} parties in ROOM_CHOSEN state`);
 
       // Check each party to see if they need to enter their chosen room
       for (const party of roomChosenParties) {
@@ -468,10 +501,16 @@ export class ActOperator {
       // The operator will handle parties as they appear
       return true;
     } catch (error: any) {
-      this.error("Error in checkAllPartiesProgress:", {
+      this.logger.error({ error: {
         message: error.message,
         stack: error.stack
-      });
+      }?.message || {
+        message: error.message,
+        stack: error.stack
+      }, stack: {
+        message: error.message,
+        stack: error.stack
+      }?.stack }, "Error in checkAllPartiesProgress:");
       return true; // Continue running even on error
     }
   }
@@ -481,14 +520,14 @@ export class ActOperator {
     
     // Check if party is already being processed
     if (this.processingParties.has(partyKey)) {
-      this.log(`Party ${partyId} is already being processed, skipping`);
+      this.logger.info(`Party ${partyId} is already being processed, skipping`);
       return;
     }
     
     // Check if party was recently processed (within last 30 seconds)
     const lastProcessed = this.recentlyProcessedParties.get(partyKey);
     if (lastProcessed && Date.now() - lastProcessed < 30000) {
-      this.log(`Party ${partyId} was recently processed, skipping`);
+      this.logger.info(`Party ${partyId} was recently processed, skipping`);
       return;
     }
     
@@ -496,32 +535,62 @@ export class ActOperator {
     this.processingParties.add(partyKey);
     
     try {
-      this.log(`Checking party ${partyId}:`, { 
+      this.logger.info({ 
         state: partyGraphQLData.state,
         roomId: partyGraphQLData.roomId
-      });
+      }, `Checking party ${partyId}:`);
       
-      // Party is guaranteed to be in ROOM_CHOSEN state from GraphQL filter
+      // Double-check that party is in ROOM_CHOSEN state
+      // GraphQL returns state as a string, but we need to compare as number
+      const partyStateNum = Number(partyGraphQLData.state);
+      if (partyStateNum !== PartyState.ROOM_CHOSEN) {
+        this.logger.info(`Party ${partyId} is not in ROOM_CHOSEN state (state: ${partyStateNum}), skipping`);
+        return;
+      }
+      
       // The roomId field contains the ID of the room they want to enter
       
       if (!partyGraphQLData.roomId || partyGraphQLData.roomId === "") {
-        this.error(`Party ${partyId} in ROOM_CHOSEN state but has no roomId`);
+        this.logger.error(`Party ${partyId} in ROOM_CHOSEN state but has no roomId`);
         return;
       }
       
       // Convert roomId string to number
       const roomIdToEnter = Number(partyGraphQLData.roomId);
       
-      // Get the room data from our map
-      const room = this.roomMap.get(roomIdToEnter);
+      // Room ID should never be 0 - this indicates an error
+      if (roomIdToEnter === 0) {
+        this.logger.error({
+          partyId: partyId.toString(),
+          partyData: partyGraphQLData,
+          state: partyGraphQLData.state,
+          roomId: partyGraphQLData.roomId
+        }, `Party ${partyId} has invalid roomId 0 - this should never happen!`);
+        throw new Error(`Party ${partyId} has invalid roomId 0`);
+      }
       
-      if (!room) {
-        this.error(`Room not found in map for ID ${roomIdToEnter} (party ${partyId})`);
-        this.log(`Available room IDs in map (first 10): ${Array.from(this.roomMap.keys()).slice(0, 10).join(', ')}...`);
+      // Get the room data from our map
+      this.logger.info(`Looking up room ID ${roomIdToEnter} in roomMap (size: ${this.roomMap.size})`);
+      const roomInternal = this.roomMap.get(roomIdToEnter);
+      
+      if (!roomInternal) {
+        this.logger.error(`Room not found in map for ID ${roomIdToEnter} (party ${partyId})`);
+        this.logger.info(`roomMap size: ${this.roomMap.size}`);
+        this.logger.info(`Available room IDs in map: ${Array.from(this.roomMap.keys()).join(', ')}`);
+        this.logger.info(`Was map fetched? Starting room ID: ${this.startingRoomId}`);
         return;
       }
       
-      this.log(`Party ${partyId} entering room ID ${roomIdToEnter} (type: ${room.roomType})`);
+      // Validate room has nextRooms before proceeding
+      if (!roomInternal.nextRooms) {
+        this.logger.error({ room: roomInternal }, `Room ${roomIdToEnter} exists but has no nextRooms array!`);
+        return;
+      }
+      
+      // Convert internal room to contract format with ABI-encoded roomData
+      const room = this.encodeRoomForContract(roomInternal);
+      
+      this.logger.info(`Party ${partyId} entering room ID ${roomIdToEnter} (type: ${roomInternal.roomType})`);
       await this.executeEnterRoom(partyId, room);
       
       // Mark party as successfully processed
@@ -536,37 +605,57 @@ export class ActOperator {
     }
     
     } catch (error: any) {
-      this.error(`Error processing party ${partyId}:`, {
+      this.logger.error({
         message: error.message,
         stack: error.stack,
         partyId: partyId.toString()
-      });
+      }, `Error processing party ${partyId}:`);
     } finally {
       // Always remove from processing set
       this.processingParties.delete(partyKey);
     }
   }
 
+  private encodeRoomForContract(roomInternal: RoomInternal): Room {
+    // Encode BattleRoomData struct as bytes
+    let roomData: `0x${string}`;
+    
+    if (roomInternal.roomType === 1) { // BATTLE room
+      // Encode BattleRoomData { uint16 monsterIndex1 }
+      roomData = encodeAbiParameters(
+        [{ type: 'uint16', name: 'monsterIndex1' }],
+        [roomInternal.monsterIndex1]
+      ) as `0x${string}`;
+    } else {
+      // For non-battle rooms, use empty bytes
+      roomData = '0x' as `0x${string}`;
+    }
+    
+    return {
+      roomType: roomInternal.roomType,
+      nextRooms: roomInternal.nextRooms,
+      roomData: roomData
+    };
+  }
+
 
   private async executeEnterRoom(partyId: bigint, room: Room): Promise<void> {
     try {
-      this.log(`Executing enterRoom for party ${partyId} with room:`, {
+      this.logger.info({
         roomType: room?.roomType,
-        monsterIndex1: room?.monsterIndex1,
-        monsterIndex2: room?.monsterIndex2,
-        monsterIndex3: room?.monsterIndex3,
-        nextRooms: room?.nextRooms,
-        room: room
-      });
+        roomData: room?.roomData,
+        nextRoomsLength: room?.nextRooms?.length,
+        nextRooms: room?.nextRooms ? JSON.stringify(room.nextRooms) : 'undefined',
+        roomStringified: JSON.stringify(room)
+      }, `Executing enterRoom for party ${partyId} with room:`);
 
       // Validate room struct
       if (!room || room.roomType === undefined || 
-          room.monsterIndex1 === undefined || room.monsterIndex2 === undefined ||
-          room.monsterIndex3 === undefined || !room.nextRooms) {
-        this.error(`Invalid room struct for party ${partyId}:`, {
+          room.roomData === undefined || !room.nextRooms) {
+        this.logger.error({
           room: room,
           partyId: partyId.toString()
-        });
+        }, `Invalid room struct for party ${partyId}:`);
         return;
       }
 
@@ -578,14 +667,34 @@ export class ActOperator {
         transport: createAuthenticatedHttpTransport(this.config.ethRpcUrl, { ETH_RPC_URL: this.config.ethRpcUrl })
       });
 
-      // Encode the enterRoom function call with the Room struct
-      const data = encodeFunctionData({
-        abi: ActABI as Abi,
-        functionName: 'enterRoom',
-        args: [partyId, room]
-      });
+      this.logger.info({
+        room,
+        partyId
+      }, "ACT OPERATOR enterRoom()")
 
-      this.log("Calling enterRoom for party", partyId, "with room type", room.roomType);
+      // Encode the enterRoom function call with the Room struct
+      let data;
+      try {
+        data = encodeFunctionData({
+          abi: ActABI as Abi,
+          functionName: 'enterRoom',
+          args: [partyId, room]
+        });
+      } catch (encodeError: any) {
+        this.logger.error({
+          error: encodeError.message,
+          stack: encodeError.stack,
+          partyId: partyId.toString(),
+          room: JSON.stringify(room),
+          roomNextRooms: room?.nextRooms,
+          roomNextRoomsType: typeof room?.nextRooms,
+          roomNextRoomsIsArray: Array.isArray(room?.nextRooms),
+          roomKeys: room ? Object.keys(room) : 'room is null/undefined'
+        }, `Failed to encode enterRoom function data: ${encodeError.message}`);
+        throw encodeError;
+      }
+
+      this.logger.info({ partyId, roomType: room.roomType }, "Calling enterRoom for party");
 
       // Forward the transaction
       let hash;
@@ -604,19 +713,19 @@ export class ActOperator {
       } catch (error: any) {
         // Check for specific error types
         if (error.message?.includes('InvalidPartyStateError')) {
-          this.log(`Party ${partyId} is no longer in ROOM_CHOSEN state, skipping`);
+          this.logger.info(`Party ${partyId} is no longer in ROOM_CHOSEN state, skipping`);
           return;
         }
-        this.error(`Error forwarding enterRoom transaction: ${error.message || error}`, {
+        this.logger.error({
           error: error.message || error,
           stack: error.stack,
           partyId: partyId.toString(),
           room: room
-        });
+        }, `Error forwarding enterRoom transaction: ${error.message || error}`);
         return;
       }
 
-      this.log("EnterRoom transaction forwarded:", hash);
+      this.logger.info({ hash }, "EnterRoom transaction forwarded:");
 
       // Wait for transaction receipt
       if (hash) {
@@ -626,24 +735,24 @@ export class ActOperator {
             transport: createAuthenticatedHttpTransport(this.config.ethRpcUrl, { ETH_RPC_URL: this.config.ethRpcUrl })
           });
           const receipt = await publicClient.waitForTransactionReceipt({ hash });
-          this.log("EnterRoom transaction confirmed:", receipt);
+          this.logger.info({ receipt }, "EnterRoom transaction confirmed:");
         } catch (error: any) {
-          this.error(`Error waiting for enterRoom transaction receipt: ${error.message || error}`, {
+          this.logger.error({
             error: error.message || error,
             stack: error.stack,
             partyId: partyId.toString()
-          });
+          }, `Error waiting for enterRoom transaction receipt: ${error.message || error}`);
         }
       } else {
-        this.error("No transaction hash received from forwardTransaction for party", partyId);
+        this.logger.error({ partyId: partyId.toString() }, "No transaction hash received from forwardTransaction for party");
       }
     } catch (error: any) {
-      this.error(`Error executing enterRoom for party ${partyId}: ${error.message || error}`, {
+      this.logger.error({
         error: error.message || error,
         stack: error.stack,
         partyId: partyId.toString(),
         room: room
-      });
+      }, `Error executing enterRoom for party ${partyId}: ${error.message || error}`);
     }
   }
 }

@@ -1,21 +1,63 @@
 [
   {
     "type": "constructor",
+    "inputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "clone",
     "inputs": [
       {
-        "name": "_trustedForwarder",
+        "name": "_fromOperator",
         "type": "address",
-        "internalType": "address"
+        "internalType": "contract IStatOperator"
       },
       {
-        "name": "_owner",
+        "name": "_fromPlayerId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "cloneTo",
+    "inputs": [
+      {
+        "name": "_fromOperator",
         "type": "address",
-        "internalType": "address"
+        "internalType": "contract IStatOperator"
       },
       {
-        "name": "_operator",
+        "name": "_fromPlayerId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "_toOperator",
         "type": "address",
-        "internalType": "address"
+        "internalType": "contract IStatOperator"
+      },
+      {
+        "name": "_toPlayerId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "nonpayable"
@@ -24,6 +66,11 @@
     "type": "function",
     "name": "get",
     "inputs": [
+      {
+        "name": "_operator",
+        "type": "address",
+        "internalType": "contract IStatOperator"
+      },
       {
         "name": "_playerId",
         "type": "uint256",
@@ -58,104 +105,13 @@
   },
   {
     "type": "function",
-    "name": "isOwnerOrOperator",
-    "inputs": [
-      {
-        "name": "_addy",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isTrustedForwarder",
-    "inputs": [
-      {
-        "name": "forwarder",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "operator",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "owner",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "renounceOperatorship",
-    "inputs": [],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "renounceOwnership",
-    "inputs": [],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "safeTransferOperator",
-    "inputs": [
-      {
-        "name": "newOperator",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "data",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "set",
     "inputs": [
+      {
+        "name": "operator",
+        "type": "address",
+        "internalType": "contract IStatOperator"
+      },
       {
         "name": "_playerId",
         "type": "uint256",
@@ -192,6 +148,11 @@
     "name": "setStat",
     "inputs": [
       {
+        "name": "operator",
+        "type": "address",
+        "internalType": "contract IStatOperator"
+      },
+      {
         "name": "_playerId",
         "type": "uint256",
         "internalType": "uint256"
@@ -211,86 +172,15 @@
     "stateMutability": "nonpayable"
   },
   {
-    "type": "function",
-    "name": "transferOperator",
-    "inputs": [
-      {
-        "name": "newOperator",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "transferOwnership",
-    "inputs": [
-      {
-        "name": "newOwner",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "trustedForwarder",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "event",
-    "name": "OperatorTransferred",
-    "inputs": [
-      {
-        "name": "previousOperator",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "newOperator",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "OwnershipTransferred",
-    "inputs": [
-      {
-        "name": "previousOwner",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "newOwner",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
     "type": "event",
     "name": "PlayerStatUpdatedEvent",
     "inputs": [
+      {
+        "name": "operator",
+        "type": "address",
+        "indexed": true,
+        "internalType": "contract IStatOperator"
+      },
       {
         "name": "playerId",
         "type": "uint256",
@@ -324,45 +214,39 @@
     "anonymous": false
   },
   {
-    "type": "error",
-    "name": "InvalidOperator",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "OnlyOperatorError",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "OnlyOwnerOrOperatorError",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "OnlyOwnerOrOperatorOrDelegateError",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "OwnableInvalidOwner",
+    "type": "event",
+    "name": "PlayerStatsClonedEvent",
     "inputs": [
       {
-        "name": "owner",
+        "name": "fromOperator",
         "type": "address",
-        "internalType": "address"
+        "indexed": true,
+        "internalType": "contract IStatOperator"
+      },
+      {
+        "name": "fromPlayerId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "toOperator",
+        "type": "address",
+        "indexed": true,
+        "internalType": "contract IStatOperator"
+      },
+      {
+        "name": "toPlayerId",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
-    ]
+    ],
+    "anonymous": false
   },
   {
     "type": "error",
-    "name": "OwnableUnauthorizedAccount",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
+    "name": "NotStatOperator",
+    "inputs": []
   }
 ]
